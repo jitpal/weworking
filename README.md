@@ -229,6 +229,8 @@ npm run check   # biome check + tsc --noEmit + vitest run
 
 Tests never touch the network; upstream responses come from `test/fixtures/`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+CI runs `npm run check` plus a `wrangler deploy --dry-run` build check on pull requests and on pushes to `main`. There is no deploy workflow: you deploy from your own machine with `npm run deploy`, so a fork needs no Cloudflare secrets in GitHub.
+
 ## Related projects
 
 This project follows the request flow published by **[dvcrn/wework-cli](https://github.com/dvcrn/wework-cli)** and **[dvcrn/mcp-server-wework](https://github.com/dvcrn/mcp-server-wework)**. They are the reference implementations for the Auth0 login and booking sequence, and the main reason this was possible at all. Also useful: **[SridarDhandapani/hotdesker](https://github.com/SridarDhandapani/hotdesker)** (Chrome extension, the most current endpoint details, including `inventory-details`) and **[jeromewir/webook](https://github.com/jeromewir/webook)** (refresh-token handling and rate limiting). None of these are affiliated with this project.

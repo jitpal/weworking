@@ -22,11 +22,13 @@ You do not need a WeWork account to work on most of the codebase. The test suite
 npm run check
 ```
 
-That is `biome check .` + `tsc --noEmit` + `vitest run`, and it is what CI runs. Also run the deploy smoke check if you touched bindings or `wrangler.jsonc`:
+That is `biome check .` + `tsc --noEmit` + `vitest run`. Also run the deploy smoke check if you touched bindings or `wrangler.jsonc`:
 
 ```sh
 npx wrangler deploy --dry-run --outdir dist
 ```
+
+GitHub Actions runs exactly those two commands (`.github/workflows/ci.yml`), on pull requests and on pushes to `main`, using the Node version in `.nvmrc`. It needs no secrets and it never deploys. Nothing else runs in CI, so a green check means your branch passes the same checks you just ran locally.
 
 ## Tests never hit the network
 
