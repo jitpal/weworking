@@ -562,8 +562,8 @@ function landingPage(): string {
 <title>weworking</title>
 <style>
 html { background: #fff; color: #000; }
-body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; padding: clamp(1.5rem, 6vw, 5rem); font: 17px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
-main { flex: 1; max-width: 34rem; }
+body { margin: 0; padding: clamp(1.5rem, 6vw, 5rem); font: 17px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+main { max-width: 34rem; }
 h1 { font-size: clamp(2.6rem, 9vw, 5rem); font-weight: 500; letter-spacing: -0.04em; line-height: 1; margin: 0 0 1.5rem; }
 p { margin: 0 0 1.25rem; }
 a { color: inherit; text-decoration: underline; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
