@@ -8,10 +8,10 @@
   "files": {
     "includes": [
       "**",
-      "!node_modules/**",
-      "!.wrangler/**",
-      "!dist/**",
-      "!coverage/**",
+      "!node_modules",
+      "!.wrangler",
+      "!dist",
+      "!coverage",
       "!worker-configuration.d.ts",
       "!package-lock.json"
     ]
@@ -39,7 +39,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "assist": {

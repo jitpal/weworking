@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "weworking": {
+      "type": "http",
+      "url": "https://REPLACE_ME.workers.dev/mcp"
+    }
+  }
+}

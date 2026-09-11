@@ -26,8 +26,8 @@
     "allowSyntheticDefaultImports": true,
 
     /* Cloudflare runtime types come from the generated worker-configuration.d.ts. */
-    "types": ["./worker-configuration.d.ts", "@cloudflare/vitest-pool-workers"]
+    "types": ["./worker-configuration.d.ts", "@cloudflare/vitest-pool-workers/types"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "*.ts", "worker-configuration.d.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "test/**/*.d.ts", "*.ts", "worker-configuration.d.ts"],
   "exclude": ["node_modules", ".wrangler", "dist"]
 }

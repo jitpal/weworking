@@ -270,14 +270,14 @@ Every failure, on both front doors, uses one envelope:
 | `UNAUTHORIZED` | 401 | no credential, or it did not match | stop. A human must fix the client config; the 401 carries `WWW-Authenticate` with the OAuth metadata URL if you can run that flow |
 | `FORBIDDEN_SCOPE` | 403 | credential lacks the required scope | stop and tell the user which scope is missing. Do not retry |
 | `WRITE_DISABLED` | 403 | `WRITE_ENABLED="false"` | stop. Reads still work; tell the user writes are switched off on this deployment |
-| `SESSION_MISSING` | 409 | no WeWork session stored | tell the user to open `/admin/connect`. Never ask them for their password |
-| `SESSION_EXPIRED` | 409 | stored session expired and could not refresh | same: reconnect at `/admin/connect` |
+| `SESSION_MISSING` | 503 | no WeWork session stored | tell the user to open `/admin/connect`. Never ask them for their password |
+| `SESSION_EXPIRED` | 503 | stored session expired and could not refresh | same: reconnect at `/admin/connect` |
 | `UPSTREAM_AUTH` | 502 | WeWork rejected the token | retried once internally already. Tell the user to reconnect |
 | `UPSTREAM_BLOCKED` | 502 | Auth0 demanded human verification or a captcha for automatic login | stop retrying; it will not clear. Tell the user to connect via `/admin/connect` |
 | `UPSTREAM_RATE_LIMITED` | 429 | WeWork returned 429 | wait and retry once, well after any `Retry-After`. Do not loop |
 | `UPSTREAM_ERROR` | 502 | upstream error or unparseable response | retry once for reads; never auto-retry a booking. Report and stop |
 | `QUOTE_INVALID` | 400 | signature failed, wrong deployment, or mangled quote | run `search_availability` again and use a fresh quote verbatim |
-| `QUOTE_EXPIRED` | 400 | quote older than `QUOTE_TTL_SECONDS` | search again and book promptly |
+| `QUOTE_EXPIRED` | 409 | quote older than `QUOTE_TTL_SECONDS` | search again and book promptly |
 | `CAP_EXCEEDED` | 429 | daily/weekly booking cap or credit ceiling reached | stop. Explain the cap and that the user can raise it in `wrangler.jsonc`. Do not look for a workaround |
 | `NOT_AVAILABLE` | 409 | the space was taken between the search and the booking | search again and offer the user the new options |
 | `BOOKING_REFUSED` | 409 | WeWork accepted the request but refused the booking (no credits, policy, overlap) | report the reason. Nothing was charged. Do not retry blindly |

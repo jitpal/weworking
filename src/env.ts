@@ -15,6 +15,27 @@
 import { AppError } from "./errors";
 import type { WeWorkSession } from "./session/do";
 
+/**
+ * Teaches the *generated* binding types about the secrets, which `wrangler types`
+ * cannot know about (they live in `.dev.vars` / `wrangler secret put`).
+ *
+ * This augmentation is what makes `env` from `cloudflare:test` — typed as
+ * `Cloudflare.Env` by `@cloudflare/vitest-pool-workers` — include the secrets the
+ * test bindings in vitest.config.ts provide.
+ */
+declare global {
+  namespace Cloudflare {
+    interface Env {
+      WEWORK_USERNAME?: string;
+      WEWORK_PASSWORD?: string;
+      ADMIN_PASSWORD?: string;
+      AUTH_TOKENS?: string;
+      QUOTE_SIGNING_KEY?: string;
+      COOKIE_SIGNING_KEY?: string;
+    }
+  }
+}
+
 /** How the worker is allowed to obtain a WeWork session. */
 export type LoginStrategyName = "auto" | "headless" | "manual";
 
@@ -260,11 +281,7 @@ function parseBoolean(value: string, name: string): boolean {
   throw validation(`${name} must be "true" or "false".`);
 }
 
-function parseInteger(
-  value: string,
-  name: string,
-  bounds: { min: number; max: number },
-): number {
+function parseInteger(value: string, name: string, bounds: { min: number; max: number }): number {
   const trimmed = value.trim();
   if (!/^-?\d+$/.test(trimmed)) {
     throw validation(`${name} must be an integer.`);

@@ -74,22 +74,37 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 
 /** Default agent-facing hint for each {@link ErrorCode}. Override per call site when you can be more specific. */
 const HINT_BY_CODE: Record<ErrorCode, string> = {
-  UNAUTHORIZED: "Send a valid bearer token, or complete the OAuth flow advertised by the WWW-Authenticate header.",
-  FORBIDDEN_SCOPE: "This credential is read-only. Ask the operator for a token with the 'write' scope.",
-  WRITE_DISABLED: "Bookings are disabled on this deployment. Ask the operator to set WRITE_ENABLED=true.",
-  SESSION_MISSING: "No WeWork session is connected. Ask the user to open <base>/admin/connect and paste their token.",
-  SESSION_EXPIRED: "The WeWork session expired and could not be refreshed. Ask the user to reconnect at <base>/admin/connect.",
-  UPSTREAM_AUTH: "WeWork rejected the stored session. Ask the user to reconnect at <base>/admin/connect.",
-  UPSTREAM_BLOCKED: "WeWork's login protection blocked an automated sign-in. Ask the user to log in with their own browser and paste the token at <base>/admin/connect.",
-  UPSTREAM_RATE_LIMITED: "WeWork is rate-limiting us. Wait a minute and retry once; do not retry in a loop.",
-  UPSTREAM_ERROR: "WeWork returned an unexpected response. Retry once; if it persists, report it to the user rather than retrying.",
-  QUOTE_INVALID: "Quotes cannot be constructed or edited. Call search_availability and pass a quote from its result verbatim.",
-  QUOTE_EXPIRED: "This quote has expired. Call search_availability again and book from a fresh result.",
-  CAP_EXCEEDED: "A configured booking cap would be exceeded. Tell the user the limit instead of retrying.",
-  NOT_AVAILABLE: "That slot is no longer available. Search again and offer the user the remaining options.",
-  BOOKING_REFUSED: "WeWork declined the booking. Report the reason to the user; do not retry the same quote.",
+  UNAUTHORIZED:
+    "Send a valid bearer token, or complete the OAuth flow advertised by the WWW-Authenticate header.",
+  FORBIDDEN_SCOPE:
+    "This credential is read-only. Ask the operator for a token with the 'write' scope.",
+  WRITE_DISABLED:
+    "Bookings are disabled on this deployment. Ask the operator to set WRITE_ENABLED=true.",
+  SESSION_MISSING:
+    "No WeWork session is connected. Ask the user to open <base>/admin/connect and paste their token.",
+  SESSION_EXPIRED:
+    "The WeWork session expired and could not be refreshed. Ask the user to reconnect at <base>/admin/connect.",
+  UPSTREAM_AUTH:
+    "WeWork rejected the stored session. Ask the user to reconnect at <base>/admin/connect.",
+  UPSTREAM_BLOCKED:
+    "WeWork's login protection blocked an automated sign-in. Ask the user to log in with their own browser and paste the token at <base>/admin/connect.",
+  UPSTREAM_RATE_LIMITED:
+    "WeWork is rate-limiting us. Wait a minute and retry once; do not retry in a loop.",
+  UPSTREAM_ERROR:
+    "WeWork returned an unexpected response. Retry once; if it persists, report it to the user rather than retrying.",
+  QUOTE_INVALID:
+    "Quotes cannot be constructed or edited. Call search_availability and pass a quote from its result verbatim.",
+  QUOTE_EXPIRED:
+    "This quote has expired. Call search_availability again and book from a fresh result.",
+  CAP_EXCEEDED:
+    "A configured booking cap would be exceeded. Tell the user the limit instead of retrying.",
+  NOT_AVAILABLE:
+    "That slot is no longer available. Search again and offer the user the remaining options.",
+  BOOKING_REFUSED:
+    "WeWork declined the booking. Report the reason to the user; do not retry the same quote.",
   NOT_FOUND: "Check the id. Use list_bookings or list_locations to get valid ids.",
-  UNSUPPORTED_SPACE_TYPE: "Only hot desks (space_type 'desk') are supported right now. Tell the user meeting rooms are not available.",
+  UNSUPPORTED_SPACE_TYPE:
+    "Only hot desks (space_type 'desk') are supported right now. Tell the user meeting rooms are not available.",
   VALIDATION: "Fix the arguments and call again; the message names the offending field.",
 };
 
@@ -133,7 +148,10 @@ export class AppError extends Error {
 
 /** Narrowing type guard. Use instead of `instanceof` across module boundaries. */
 export function isAppError(value: unknown): value is AppError {
-  return value instanceof AppError || (value instanceof Error && value.name === "AppError" && "code" in value);
+  return (
+    value instanceof AppError ||
+    (value instanceof Error && value.name === "AppError" && "code" in value)
+  );
 }
 
 /** The wire shape for an error, identical for MCP tool results and REST bodies. */

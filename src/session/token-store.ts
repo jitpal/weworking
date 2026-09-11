@@ -14,7 +14,7 @@
 import type { SessionInfo, SessionRecord, TokenStore } from "../core/types";
 import { AppError } from "../errors";
 
-export type { TokenStore, SessionInfo, SessionRecord };
+export type { SessionInfo, SessionRecord, TokenStore };
 
 /** Refresh proactively once the token has less than this long to live. */
 export const REFRESH_WINDOW_MS = 6 * 60 * 60 * 1000;

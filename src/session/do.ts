@@ -47,10 +47,7 @@ export class WeWorkSession extends DurableObject<Env> {
  * Always go through this helper rather than calling `idFromName` inline, so the
  * single-instance invariant (and the future multi-account seam) lives in one place.
  */
-export function getSessionStub(
-  env: Env,
-  accountId = "default",
-): DurableObjectStub<WeWorkSession> {
+export function getSessionStub(env: Env, accountId = "default"): DurableObjectStub<WeWorkSession> {
   const name = accountId === "default" ? SESSION_DO_NAME : `session:${accountId}`;
   return env.SESSION.get(env.SESSION.idFromName(name));
 }

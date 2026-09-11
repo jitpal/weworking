@@ -35,7 +35,7 @@ Copy the printed `id` into `wrangler.jsonc`:
 ]
 ```
 
-If you leave it as `REPLACE_ME`, deploy fails with an unknown-namespace error. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
+If you leave the `REPLACE_ME...` placeholder in place, deploy fails with an unknown-namespace error. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
 
 ## 3. Set secrets
 
