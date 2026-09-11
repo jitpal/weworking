@@ -143,7 +143,12 @@ export async function runSearchAvailability(
       ? emptyNote
       : [
           `${results.length} option(s) on ${input.date}; confirm one with the user before booking.`,
-          ...results.map((result, index) => `${index + 1}. ${result.summary}`),
+          // The quote goes in the text too: many clients show the model only the
+          // text part of a tool result, and create_booking accepts nothing else.
+          ...results.map(
+            (result, index) =>
+              `${index + 1}. ${result.summary}\n   location_id: ${result.location.locationId}\n   quote: ${result.quote}`,
+          ),
           quoteExpiresAt ? `Quotes expire at ${quoteExpiresAt}.` : "",
         ]
           .filter(Boolean)
@@ -221,7 +226,7 @@ export async function runListBookings(
       : `${bookings.length} booking(s): ${bookings
           .map(
             (booking) =>
-              `${booking.bookingId} — ${booking.locationName} ${booking.date} ${timeOf(booking.startLocal)}-${timeOf(booking.endLocal)} (${booking.timezone}), ${booking.credits} credit(s), ${booking.status}`,
+              `booking_id ${booking.bookingId}: ${booking.locationName} ${booking.date} ${timeOf(booking.startLocal)}-${timeOf(booking.endLocal)} (${booking.timezone}), ${booking.credits} credit(s), ${booking.status}`,
           )
           .join("; ")}`;
   return { structured: { bookings }, text };
