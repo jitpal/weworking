@@ -663,7 +663,7 @@ footer { max-width: 34rem; font-size: 0.85rem; color: #555; margin-top: 3rem; }
 <body>
 <main>
 <h1>weworking</h1>
-<p>Lets an AI agent search and book WeWork hot desks on one member account. Runs on Cloudflare Workers as an MCP server, self-hosted by whoever deployed it.</p>
+<p>Your AI agent books your WeWork desk. This is one member's own copy, running on Cloudflare Workers and speaking MCP.</p>
 <p><a href="${escapeHtml(REPO_URL)}">Source and setup instructions</a></p>
 <p><a href="/admin">Operator sign in</a></p>
 </main>

@@ -1,6 +1,6 @@
 # weworking
 
-Lets an AI agent book your WeWork desk. I have an All Access membership, and every morning my agent reads my calendar, works out which building makes sense for the day, and books a desk there. This is the small Cloudflare Worker that makes that possible: it talks to WeWork with your own account and exposes six tools over MCP that any agent can use.
+Your AI agent books your WeWork desk. I'm on All Access, and every morning my agent reads my calendar, picks the building that fits the day, and books a desk there. This Worker makes that happen: it talks to WeWork with your own account and hands any agent six MCP tools to do the same, with caps that stop it spending what you didn't approve.
 
 Unofficial. Not affiliated with WeWork. It uses the same private endpoints the WeWork web app uses, they can change without notice, and you are responsible for your own account and for WeWork's terms. See [the threat model](docs/THREAT_MODEL.md) before deploying.
 
