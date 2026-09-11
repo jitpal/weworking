@@ -28,6 +28,7 @@ import OAuthProvider, {
   AuthorizationError,
   type AuthRequest,
   type OAuthHelpers,
+  type OAuthProviderOptions,
 } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import type { Scope } from "../core/types";
@@ -96,7 +97,7 @@ export function createOAuthProvider(options: CreateOAuthProviderOptions): OAuthP
   return new OAuthProvider<Env>({
     apiRoute: [...API_ROUTES],
     apiHandler: normaliseApiHandler(options.apiHandler),
-    defaultHandler: options.defaultHandler as never,
+    defaultHandler: options.defaultHandler as ProviderDefaultHandler,
     authorizeEndpoint: AUTHORIZE_ENDPOINT,
     tokenEndpoint: TOKEN_ENDPOINT,
     clientRegistrationEndpoint: REGISTRATION_ENDPOINT,
@@ -140,14 +141,21 @@ export function createOAuthProvider(options: CreateOAuthProviderOptions): OAuthP
   });
 }
 
-function normaliseApiHandler(handler: ExportedHandler<Env> | ApiFetchHandler): never {
+/** The library's own handler types, which require a non-optional `fetch`. */
+type ProviderApiHandler = NonNullable<OAuthProviderOptions<Env>["apiHandler"]>;
+type ProviderDefaultHandler = OAuthProviderOptions<Env>["defaultHandler"];
+
+/**
+ * Accepts either shape §11.3 allows and hands the library what it wants. The cast is
+ * the gap between `ExportedHandler<Env>` (whose `fetch` is optional) and the
+ * library's `ExportedHandlerWithFetch<Env>`; the function form always has one.
+ */
+function normaliseApiHandler(handler: ExportedHandler<Env> | ApiFetchHandler): ProviderApiHandler {
   const normalised: ExportedHandler<Env> =
     typeof handler === "function"
       ? { fetch: (request, env, ctx) => handler(request, env, ctx) }
       : handler;
-  // The library's `ExportedHandlerWithFetch` requires a non-optional `fetch`, which
-  // `ExportedHandler<Env>` (our public signature, per spec §11.3) does not express.
-  return normalised as never;
+  return normalised as ProviderApiHandler;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -172,7 +180,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
     try {
       authRequest = await helpers.parseAuthRequest(c.req.raw);
     } catch (error) {
-      return authorizationErrorResponse(c.req.raw, error);
+      return authorizationErrorResponse(error);
     }
 
     const client = await helpers.lookupClient(authRequest.clientId);
@@ -418,7 +426,7 @@ function stringField(value: unknown): string | undefined {
 }
 
 /** Turns a `parseAuthRequest` failure into either a local error page or an OAuth error redirect. */
-function authorizationErrorResponse(request: Request, error: unknown): Response {
+function authorizationErrorResponse(error: unknown): Response {
   if (!(error instanceof AuthorizationError)) throw error;
   if (!error.redirectUri) {
     return htmlResponse(errorPage("Invalid authorization request", error.description), 400);
@@ -428,7 +436,6 @@ function authorizationErrorResponse(request: Request, error: unknown): Response 
   redirect.searchParams.set("error_description", error.description);
   if (error.state) redirect.searchParams.set("state", error.state);
   if (error.issuer) redirect.searchParams.set("iss", error.issuer);
-  void request;
   return Response.redirect(redirect.toString(), 302);
 }
 

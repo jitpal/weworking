@@ -14,8 +14,7 @@
  * signature.
  */
 
-import { Client } from "@modelcontextprotocol/client";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BookingServiceImpl } from "../../src/core/booking-service";
@@ -92,7 +91,8 @@ function buildApp(
     const original = new Request(input as RequestInfo, init);
     const headers = new Headers(original.headers);
     if (!headers.has("host")) headers.set("host", new URL(original.url).host);
-    const body = original.method === "GET" || original.method === "HEAD" ? undefined : await original.text();
+    const body =
+      original.method === "GET" || original.method === "HEAD" ? undefined : await original.text();
     const request = new Request(original.url, {
       method: original.method,
       headers,
@@ -123,7 +123,9 @@ function buildApp(
       const transport = new StreamableHTTPClientTransport(new URL(`${ORIGIN}/mcp`), {
         fetch: appFetch as unknown as typeof fetch,
         requestInit: {
-          headers: { "x-test-actor": actor === null ? "none" : actor === READ_ONLY_ACTOR ? "read" : "rw" },
+          headers: {
+            "x-test-actor": actor === null ? "none" : actor === READ_ONLY_ACTOR ? "read" : "rw",
+          },
         },
       });
       await client.connect(transport);
@@ -133,7 +135,11 @@ function buildApp(
 }
 
 /** The `{ code, message, hint }` body a failing tool returns as text. */
-function errorBody(result: { content?: unknown }): { code: string; message: string; hint?: string } {
+function errorBody(result: { content?: unknown }): {
+  code: string;
+  message: string;
+  hint?: string;
+} {
   const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
   const text = content[0]?.text ?? "{}";
   return JSON.parse(text) as { code: string; message: string; hint?: string };
@@ -185,7 +191,14 @@ describe("tools/list", () => {
     // Inputs are snake_case, per build spec §11.4.
     const search = byName.get("search_availability");
     expect(Object.keys(search?.inputSchema?.properties ?? {})).toEqual(
-      expect.arrayContaining(["location_id", "city", "date", "start_time", "end_time", "space_type"]),
+      expect.arrayContaining([
+        "location_id",
+        "city",
+        "date",
+        "start_time",
+        "end_time",
+        "space_type",
+      ]),
     );
     expect(search?.inputSchema?.required).toEqual(["date"]);
     // Descriptions are the model's only documentation: they must mention the cost.
@@ -199,7 +212,12 @@ describe("tools/call", () => {
     const client = await app.connect();
     const result = await client.callTool({
       name: "search_availability",
-      arguments: { location_id: "loc-poultry", date: "2026-09-21", start_time: "09:00", end_time: "17:00" },
+      arguments: {
+        location_id: "loc-poultry",
+        date: "2026-09-21",
+        start_time: "09:00",
+        end_time: "17:00",
+      },
     });
 
     expect(result.isError).toBeFalsy();
@@ -336,7 +354,10 @@ describe("tools/call", () => {
     const bookings = await client.callTool({ name: "list_bookings", arguments: {} });
     expect((bookings.structuredContent as { bookings: unknown[] }).bookings).toHaveLength(1);
 
-    const locations = await client.callTool({ name: "list_locations", arguments: { city: "London" } });
+    const locations = await client.callTool({
+      name: "list_locations",
+      arguments: { city: "London" },
+    });
     expect((locations.structuredContent as { locations: unknown[] }).locations).toHaveLength(1);
   });
 });

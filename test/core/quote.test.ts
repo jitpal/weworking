@@ -90,7 +90,10 @@ describe("signQuote / verifyQuote", () => {
     const quote = await signQuote(payload(), TEST_QUOTE_KEY);
     const [body, signature] = quote.split(".") as [string, string];
     const flipped = `${signature.slice(0, -1)}${signature.endsWith("A") ? "B" : "A"}`;
-    await expectCode(verifyQuote(`${body}.${flipped}`, TEST_QUOTE_KEY, verifyOpts), "QUOTE_INVALID");
+    await expectCode(
+      verifyQuote(`${body}.${flipped}`, TEST_QUOTE_KEY, verifyOpts),
+      "QUOTE_INVALID",
+    );
   });
 
   it("rejects a quote signed by another deployment's key", async () => {

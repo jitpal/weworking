@@ -159,9 +159,9 @@ describe("utcToLocal / labels", () => {
   });
 
   it("formats a same-day range compactly and a midnight-crossing one in full", () => {
-    expect(
-      formatLocalRange("2026-09-21T08:00:00Z", "2026-09-21T16:00:00Z", "Europe/London"),
-    ).toBe("Mon 21 Sep 09:00-17:00");
+    expect(formatLocalRange("2026-09-21T08:00:00Z", "2026-09-21T16:00:00Z", "Europe/London")).toBe(
+      "Mon 21 Sep 09:00-17:00",
+    );
     expect(formatLocalRange("2026-09-21T13:00:00Z", "2026-09-21T16:00:00Z", "Asia/Tokyo")).toBe(
       "Mon 21 Sep 22:00 - Tue 22 Sep 01:00",
     );

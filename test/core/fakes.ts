@@ -13,7 +13,6 @@
  * then confirm), not about call counts.
  */
 
-import { createBookingService } from "../../src/core/booking-service";
 import type {
   BookingServiceDeps,
   BookingServiceImpl,
@@ -21,6 +20,7 @@ import type {
   SessionRpc,
   WeWorkApi,
 } from "../../src/core/booking-service";
+import { createBookingService } from "../../src/core/booking-service";
 import type {
   Actor,
   Booking,
@@ -33,11 +33,10 @@ import type {
   SessionInfo,
   SpaceAvailability,
 } from "../../src/core/types";
-import { AppError } from "../../src/errors";
+import type { AppError } from "../../src/errors";
 
 /** A 64-character hex key, the shape `parseConfig` enforces for `QUOTE_SIGNING_KEY`. */
-export const TEST_QUOTE_KEY =
-  "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+export const TEST_QUOTE_KEY = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
 /** A frozen clock: 2026-09-11T09:00:00Z, a Friday. */
 export const NOW_MS = Date.parse("2026-09-11T09:00:00Z");
@@ -162,7 +161,9 @@ export interface FakeApiScript {
   locationsByGeo?: Location[];
   profile?: Profile | (() => Promise<Profile>);
   credits?: Credits | (() => Promise<Credits | undefined>);
-  spaces?: SpaceAvailability[] | ((args: { locationIds: string[]; date: string }) => SpaceAvailability[]);
+  spaces?:
+    | SpaceAvailability[]
+    | ((args: { locationIds: string[]; date: string }) => SpaceAvailability[]);
   bookingSpaceId?: string;
   /** Price returned at booking time — set `credits` differently to simulate a price change. */
   price?: { credits: number; creditRatio: number };

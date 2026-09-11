@@ -167,9 +167,9 @@ export function mountMcp(app: Hono<{ Bindings: Env }>, opts: MountMcpOptions): v
  * normal case for `app.request()` in a test, and for any non-OAuth credential — so the
  * access is guarded rather than optional-chained.
  */
-function oauthProps(c: { executionCtx: ExecutionContext }): unknown {
+function oauthProps(c: { executionCtx: unknown }): unknown {
   try {
-    return (c.executionCtx as ExecutionContext & { props?: unknown }).props;
+    return (c.executionCtx as { props?: unknown } | undefined)?.props;
   } catch {
     return undefined;
   }

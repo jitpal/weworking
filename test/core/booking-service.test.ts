@@ -64,7 +64,10 @@ describe("listLocations", () => {
       apiScript: {
         cities: ["London", "New York"],
         locationsByCity: {
-          London: [makeLocation(), makeLocation({ locationId: "loc-spitalfields", name: "Spitalfields" })],
+          London: [
+            makeLocation(),
+            makeLocation({ locationId: "loc-spitalfields", name: "Spitalfields" }),
+          ],
         },
       },
     });
@@ -101,11 +104,17 @@ describe("listLocations", () => {
     const harness = createHarness({
       apiScript: {
         locationsByCity: {
-          London: [makeLocation(), makeLocation({ locationId: "b" }), makeLocation({ locationId: "c" })],
+          London: [
+            makeLocation(),
+            makeLocation({ locationId: "b" }),
+            makeLocation({ locationId: "c" }),
+          ],
         },
       },
     });
-    await expect(harness.service.listLocations({ city: "London", limit: 2 })).resolves.toHaveLength(2);
+    await expect(harness.service.listLocations({ city: "London", limit: 2 })).resolves.toHaveLength(
+      2,
+    );
   });
 });
 
@@ -160,7 +169,10 @@ describe("searchAvailability", () => {
 
   it("falls back to the building's own window when no times are given", async () => {
     const harness = createHarness();
-    const results = await harness.service.searchAvailability({ locationId: "loc-poultry", date: DATE });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
     expect(results[0]?.startLocal).toBe("2026-09-21T08:00:00");
     expect(results[0]?.endUtc).toBe("2026-09-21T17:00:00Z");
   });
@@ -183,7 +195,10 @@ describe("searchAvailability", () => {
     const harness = createHarness({
       apiScript: { spaces: [makeSpace({ seatsAvailable: 0 }), makeSpace({ spaceId: "s2" })] },
     });
-    const results = await harness.service.searchAvailability({ locationId: "loc-poultry", date: DATE });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
     expect(results.map((r) => r.spaceId)).toEqual(["s2"]);
   });
 
@@ -197,7 +212,10 @@ describe("searchAvailability", () => {
         ],
       },
     });
-    const results = await harness.service.searchAvailability({ locationId: "loc-poultry", date: DATE });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
     expect(results.map((r) => r.spaceId)).toEqual(["cheap-empty", "cheap-busy", "pricey"]);
   });
 
@@ -229,7 +247,10 @@ describe("searchAvailability", () => {
     ["a past date", { locationId: "loc-poultry", date: "2026-09-01" }],
     ["neither location nor city", { date: DATE }],
     ["both location and city", { locationId: "loc-poultry", city: "London", date: DATE }],
-    ["an inverted window", { locationId: "loc-poultry", date: DATE, startTime: "17:00", endTime: "09:00" }],
+    [
+      "an inverted window",
+      { locationId: "loc-poultry", date: DATE, startTime: "17:00", endTime: "09:00" },
+    ],
   ])("rejects %s", async (_label, args) => {
     const harness = createHarness();
     expect(await codeOf(harness.service.searchAvailability(args))).toBe("VALIDATION");
@@ -240,7 +261,9 @@ describe("searchAvailability", () => {
     const harness = createHarness({
       nowMs: Date.parse("2026-09-21T23:30:00Z"),
       apiScript: {
-        locationsByCity: { "New York": [makeLocation({ timezone: "America/New_York", city: "New York" })] },
+        locationsByCity: {
+          "New York": [makeLocation({ timezone: "America/New_York", city: "New York" })],
+        },
         spaces: [
           makeSpace({
             location: makeLocation({ timezone: "America/New_York", city: "New York" }),
@@ -286,9 +309,7 @@ describe("createBooking", () => {
 
     // The order of upstream calls is the safety property: price, then book.
     expect(harness.api.calls.map((c) => c.method).slice(-2)).toEqual(["quote", "book"]);
-    expect(harness.session.confirmed).toEqual([
-      { bookingKey: "book:key-1", bookingId: "RES-NEW" },
-    ]);
+    expect(harness.session.confirmed).toEqual([{ bookingKey: "book:key-1", bookingId: "RES-NEW" }]);
     expect(harness.session.released).toEqual([]);
     expect(harness.session.audits).toContainEqual({
       tool: "create_booking",
@@ -304,9 +325,9 @@ describe("createBooking", () => {
     const [body] = quote.split(".") as [string, string];
     const forged = `${body}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
 
-    expect(
-      await codeOf(harness.service.createBooking({ quote: forged }, READ_WRITE_ACTOR)),
-    ).toBe("QUOTE_INVALID");
+    expect(await codeOf(harness.service.createBooking({ quote: forged }, READ_WRITE_ACTOR))).toBe(
+      "QUOTE_INVALID",
+    );
     expect(harness.api.calls).toHaveLength(callsBefore);
     expect(harness.session.reserved.size).toBe(0);
   });
@@ -375,9 +396,9 @@ describe("createBooking", () => {
   it("books when the price is unchanged to the credit", async () => {
     const harness = createHarness({ apiScript: { price: { credits: 1, creditRatio: 0.5 } } });
     const quote = await firstQuote(harness);
-    await expect(
-      harness.service.createBooking({ quote }, READ_WRITE_ACTOR),
-    ).resolves.toMatchObject({ creditsCharged: 1 });
+    await expect(harness.service.createBooking({ quote }, READ_WRITE_ACTOR)).resolves.toMatchObject(
+      { creditsCharged: 1 },
+    );
     // The authoritative creditRatio from the re-price is what goes upstream.
     expect(harness.api.calls.at(-1)).toEqual({
       method: "book",
@@ -456,7 +477,9 @@ describe("createBooking", () => {
     });
     expect(result.summary).toContain("Dry run");
     expect(result.capsRemaining).toEqual({ day: 1, week: 5 });
-    expect(harness.api.calls.filter((c) => c.method === "quote" || c.method === "book")).toEqual([]);
+    expect(harness.api.calls.filter((c) => c.method === "quote" || c.method === "book")).toEqual(
+      [],
+    );
     expect(harness.session.usedToday()).toBe(0);
     expect(harness.session.audits).toContainEqual({
       tool: "create_booking",
@@ -482,9 +505,9 @@ describe("createBooking", () => {
       apiScript: { fail: { book: new AppError("UPSTREAM_ERROR", "WeWork exploded") } },
     });
     const quote = await firstQuote(harness);
-    expect(await codeOf(harness.service.createBooking({ quote, idempotencyKey: "k" }, READ_WRITE_ACTOR))).toBe(
-      "UPSTREAM_ERROR",
-    );
+    expect(
+      await codeOf(harness.service.createBooking({ quote, idempotencyKey: "k" }, READ_WRITE_ACTOR)),
+    ).toBe("UPSTREAM_ERROR");
     expect(harness.session.released).toEqual(["book:k"]);
     expect(harness.session.usedToday()).toBe(0);
     expect(harness.session.idempotency.size).toBe(0);
