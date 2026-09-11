@@ -265,9 +265,20 @@ export interface ListLocationsArgs {
 
 /** Arguments for {@link BookingService.searchAvailability}. */
 export interface SearchAvailabilityArgs {
-  /** Either `locationId` or `city` must be supplied. */
+  /** Exactly one of `locationId`, `city`, or `lat`+`lng` must be supplied. */
   locationId?: string;
   city?: string;
+  /** Geographic search; nearest buildings first. Both required together. */
+  lat?: number;
+  lng?: number;
+  /** Radius for the geographic search, in km. */
+  radiusKm?: number;
+  /**
+   * IANA zone of the building, optional with `locationId`. `list_locations` returns
+   * it; passing it back lets a never-seen building be searched correctly without a
+   * lookup.
+   */
+  timezone?: string;
   /** Local calendar date, `"YYYY-MM-DD"`. */
   date: string;
   /** Local wall-clock `"HH:MM"`; defaults to the building's opening time. */

@@ -101,13 +101,38 @@ export const searchAvailabilityInput = z.object({
     .string()
     .min(1)
     .optional()
-    .describe("One building, from list_locations. Mutually exclusive with city."),
+    .describe("One building, from list_locations. Mutually exclusive with city and lat/lng."),
   city: z
     .string()
     .min(1)
     .optional()
     .describe(
-      "Search every building in this city (up to 10). Mutually exclusive with location_id.",
+      "Search every building in this city (up to 10). Mutually exclusive with location_id and lat/lng.",
+    ),
+  lat: z
+    .number()
+    .min(-90)
+    .max(90)
+    .optional()
+    .describe("Latitude for a nearby search (up to 10 nearest buildings); requires lng."),
+  lng: z
+    .number()
+    .min(-180)
+    .max(180)
+    .optional()
+    .describe("Longitude for a nearby search; requires lat."),
+  radius_km: z
+    .number()
+    .min(0.1)
+    .max(100)
+    .optional()
+    .describe("Radius for the nearby search, in km. Default 5."),
+  timezone: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "IANA zone of the building, e.g. 'America/New_York', as returned by list_locations. Optional with location_id; pass it when you have it.",
     ),
   date: dateField,
   start_time: timeField

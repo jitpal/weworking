@@ -781,16 +781,17 @@ export class WeWorkClient implements WeWorkApi {
       const cached = this.#locations.get(id);
       if (cached) return cached;
     }
-    if (!this.#locationStore) return undefined;
-    for (const id of locationIds) {
-      try {
-        const stored = await this.#locationStore.get(id);
-        if (stored) {
-          this.#locations.set(id, stored);
-          return stored;
+    if (this.#locationStore) {
+      for (const id of locationIds) {
+        try {
+          const stored = await this.#locationStore.get(id);
+          if (stored) {
+            this.#locations.set(id, stored);
+            return stored;
+          }
+        } catch (err) {
+          console.warn("location store lookup failed", toErrorBody(err));
         }
-      } catch (err) {
-        console.warn("location store lookup failed", toErrorBody(err));
       }
     }
     return undefined;

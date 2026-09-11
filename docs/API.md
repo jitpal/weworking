@@ -78,7 +78,7 @@ WeWork bills some memberships in monthly credits and others (such as "On Demand"
 - `credits`: the credit cost from WeWork's listing. `0` on a pay-as-you-go account.
 - `cashPrice`: `{ "amount": 84, "currency": "GBP" }`, present on pay-as-you-go accounts. It is the tax-inclusive total from WeWork's quote call, which prices a slot without reserving it, so a cash-account search costs one extra upstream request per space.
 
-When `results` is empty the response also carries `note`, a sentence explaining that WeWork listed nothing bookable for this account at that building and suggesting a city search. Searching by `city` is the most reliable path for a building the deployment has never listed before, because WeWork needs the building's timezone offset in the request and a city search supplies it.
+When `results` is empty the response also carries `note`, a sentence explaining that WeWork listed nothing bookable for this account at that building and suggesting a city search. Searching by `city` or `lat`/`lng` is the most reliable path for a building the deployment has never listed before, because WeWork needs the building's timezone offset in the request and those searches supply it. With a bare `location_id`, pass `timezone` from the listing for the same effect.
 
 The `summary` line shows whichever applies ("84 credits" or "£84.00"), or "price unavailable" if the quote call failed. Booking re-checks the price against the signed quote and refuses with `BOOKING_REFUSED` if it moved. `whoami.credits` is absent on cash accounts, and `whoami.profile.membershipType` reads "On Demand" for them.
 
@@ -124,8 +124,11 @@ At least one of `query`, `city`, or `lat`+`lng` is required.
 
 | Param | Type | Notes |
 | --- | --- | --- |
-| `location_id` | string | one building; mutually exclusive with `city` |
-| `city` | string | search every building in the city |
+| `location_id` | string | one building, from `list_locations` |
+| `city` | string | every building in the city, up to 10 |
+| `lat`, `lng` | number | the nearest buildings to a point, up to 10, nearest first |
+| `radius_km` | number | max distance for the `lat`/`lng` search; default 5 |
+| `timezone` | string | optional with `location_id`: the building's IANA zone as returned by `list_locations` |
 | `date` | string | **required**, `YYYY-MM-DD` local |
 | `start_time` | string | local `HH:MM`, 30-minute boundary; defaults to the building's opening time |
 | `end_time` | string | local `HH:MM`; defaults to closing time |
@@ -133,7 +136,7 @@ At least one of `query`, `city`, or `lat`+`lng` is required.
 | `capacity` | integer | minimum seats; desks are 1 |
 | `limit` | integer | default 20 |
 
-One of `location_id` or `city` is required.
+Exactly one of `location_id`, `city`, or `lat`+`lng` is required. Every result is a bookable desk option for that date: seats, price, local hours, the building (with `distanceKm` on a nearby search), and the signed `quote`.
 
 `GET /api/availability?location_id=5a9c1f70-...&date=2026-09-21&start_time=09:00&end_time=17:00`
 

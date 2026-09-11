@@ -138,6 +138,55 @@ describe("listLocations", () => {
 });
 
 describe("searchAvailability", () => {
+  it("searches nearby buildings by lat/lng, nearest first, with distances on each result", async () => {
+    const near = makeLocation({ locationId: "loc-near", name: "Near", distanceKm: 0.4 });
+    const far = makeLocation({ locationId: "loc-far", name: "Far", distanceKm: 2.1 });
+    const harness = createHarness({
+      apiScript: {
+        locationsByGeo: [far, near],
+        spaces: [
+          makeSpace({ location: far, credits: 1 }),
+          makeSpace({ location: near, credits: 2 }),
+        ],
+      },
+    });
+    const results = await harness.service.searchAvailability({
+      lat: 51.51,
+      lng: -0.09,
+      radiusKm: 3,
+      date: DATE,
+    });
+    expect(harness.api.calls[0]).toMatchObject({
+      method: "listLocationsByGeo",
+      args: { lat: 51.51, lng: -0.09, radiusKm: 3 },
+    });
+    expect(results.map((r) => r.location.locationId)).toEqual(["loc-near", "loc-far"]);
+    expect(results[0]?.location.distanceKm).toBe(0.4);
+  });
+
+  it("uses the agent-supplied timezone for a bare location_id", async () => {
+    const harness = createHarness();
+    await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      timezone: "America/New_York",
+      date: "2026-11-10",
+    });
+    const call = harness.api.calls.find((c) => c.method === "getSpaces");
+    expect(call?.args).toMatchObject({ locationOffset: "-05:00" });
+  });
+
+  it("rejects mixing location modes and half a coordinate", async () => {
+    const harness = createHarness();
+    expect(
+      await codeOf(
+        harness.service.searchAvailability({ city: "London", lat: 1, lng: 2, date: DATE }),
+      ),
+    ).toBe("VALIDATION");
+    expect(await codeOf(harness.service.searchAvailability({ lat: 1, date: DATE }))).toBe(
+      "VALIDATION",
+    );
+  });
+
   it("prices pay-as-you-go spaces through the quote call in the building's currency", async () => {
     // Live-verified against an "On Demand" account: get-spaces says 0 credits and
     // lists a pre-tax day rate; the quote returns the tax-inclusive total.

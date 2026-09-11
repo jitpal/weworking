@@ -113,6 +113,10 @@ export async function runSearchAvailability(
   const args: SearchArgs = { date: input.date };
   if (input.location_id !== undefined) args.locationId = input.location_id;
   if (input.city !== undefined) args.city = input.city;
+  if (input.lat !== undefined) args.lat = input.lat;
+  if (input.lng !== undefined) args.lng = input.lng;
+  if (input.radius_km !== undefined) args.radiusKm = input.radius_km;
+  if (input.timezone !== undefined) args.timezone = input.timezone;
   if (input.start_time !== undefined) args.startTime = input.start_time;
   if (input.end_time !== undefined) args.endTime = input.end_time;
   if (input.space_type !== undefined) {

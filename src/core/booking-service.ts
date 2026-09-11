@@ -88,6 +88,7 @@ export interface WeWorkApi {
     date: string;
     spaceType?: SpaceType;
     capacity?: number;
+    locationOffset?: string;
   }): Promise<SpaceAvailability[]>;
   resolveBookingSpaceId(space: SpaceAvailability): Promise<string>;
   quote(q: QuotePayload): Promise<{
@@ -203,6 +204,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 /** A city-wide search fans out across at most this many buildings (one upstream call each). */
 const MAX_CITY_LOCATIONS = 10;
+/** Default radius for a lat/lng availability search. */
+const DEFAULT_GEO_RADIUS_KM = 5;
 /** Credit drift tolerated between the signed quote and the price at booking time. */
 const CREDIT_TOLERANCE = 0;
 /** How long a stored idempotency result stays replayable. */
@@ -305,14 +308,21 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     const date = assertDate(args.date, "date");
     const locationId = trimmed(args.locationId);
     const city = trimmed(args.city);
-    if (!locationId && !city) {
-      throw new AppError("VALIDATION", "Either location_id or city is required.", {
-        hint: "Call list_locations first and pass one location_id, or pass a city to search every building in it.",
+    const hasGeo = typeof args.lat === "number" || typeof args.lng === "number";
+    if (hasGeo && (typeof args.lat !== "number" || typeof args.lng !== "number")) {
+      throw new AppError("VALIDATION", "lat and lng must be supplied together.", {
+        hint: "Pass both lat and lng for a nearby search, or use city or location_id.",
       });
     }
-    if (locationId && city) {
-      throw new AppError("VALIDATION", "location_id and city are mutually exclusive.", {
-        hint: "Search one building by location_id, or a whole city by city — not both.",
+    const modes = [locationId ? 1 : 0, city ? 1 : 0, hasGeo ? 1 : 0].reduce((a, b) => a + b, 0);
+    if (modes === 0) {
+      throw new AppError("VALIDATION", "One of location_id, city, or lat+lng is required.", {
+        hint: "Pass a city or lat/lng to search nearby buildings, or a location_id from list_locations for one building.",
+      });
+    }
+    if (modes > 1) {
+      throw new AppError("VALIDATION", "location_id, city, and lat/lng are mutually exclusive.", {
+        hint: "Search one building by location_id, a whole city by city, or nearby buildings by lat/lng. Pick one.",
       });
     }
 
@@ -327,24 +337,50 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     }
 
     let locationIds: string[];
+    let locationOffset: string | undefined;
+    let distanceById: Map<string, number> | undefined;
     if (locationId) {
-      // No cheap way to learn this building's zone before the search, so only the
-      // conservative check is possible here; the per-zone check happens below, once
-      // the response tells us the zone.
-      if (compareDates(date, addDays(todayIn("UTC", now()), -1)) < 0) {
+      const tz = trimmed(args.timezone);
+      if (tz) {
+        // The agent already holds the zone from list_locations; honour it so a
+        // never-seen building is searched correctly without any lookup.
+        const offset = offsetString(Date.parse(`${date}T12:00:00Z`), tz);
+        if (compareDates(date, todayIn(tz, now())) < 0) throw pastDate(date);
+        locationOffset = offset;
+      } else if (compareDates(date, addDays(todayIn("UTC", now()), -1)) < 0) {
+        // Conservative check only; the per-zone check happens once the response
+        // tells us the zone.
         throw pastDate(date);
       }
       locationIds = [locationId];
     } else {
-      const locations = await api.listLocationsByCity(city as string);
+      const locations = hasGeo
+        ? await api.listLocationsByGeo({
+            lat: args.lat as number,
+            lng: args.lng as number,
+            radiusKm: args.radiusKm ?? DEFAULT_GEO_RADIUS_KM,
+          })
+        : await api.listLocationsByCity(city as string);
       if (locations.length === 0) {
-        throw new AppError("NOT_FOUND", `No WeWork buildings found in "${city}".`, {
-          hint: "Call list_locations to see which cities and buildings exist.",
-        });
+        throw new AppError(
+          "NOT_FOUND",
+          hasGeo
+            ? `No WeWork buildings within ${args.radiusKm ?? DEFAULT_GEO_RADIUS_KM} km of that point.`
+            : `No WeWork buildings found in "${city}".`,
+          {
+            hint: "Call list_locations to see which cities and buildings exist, or widen radius_km.",
+          },
+        );
       }
       const firstTz = locations[0]?.timezone ?? "UTC";
       if (compareDates(date, todayIn(firstTz, now())) < 0) throw pastDate(date);
-      locationIds = locations.slice(0, MAX_CITY_LOCATIONS).map((location) => location.locationId);
+      const chosen = locations.slice(0, MAX_CITY_LOCATIONS);
+      locationIds = chosen.map((location) => location.locationId);
+      if (hasGeo) {
+        distanceById = new Map(
+          chosen.flatMap((l) => (l.distanceKm === undefined ? [] : [[l.locationId, l.distanceKm]])),
+        );
+      }
     }
 
     const spacesArgs: {
@@ -352,8 +388,10 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
       date: string;
       spaceType?: SpaceType;
       capacity?: number;
+      locationOffset?: string;
     } = { locationIds, date, spaceType };
     if (typeof args.capacity === "number") spacesArgs.capacity = args.capacity;
+    if (locationOffset) spacesArgs.locationOffset = locationOffset;
     const spaces = await api.getSpaces(spacesArgs);
 
     const expSeconds = Math.floor(now() / 1000) + config.quoteTtlSeconds;
@@ -430,12 +468,28 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     }
 
     // Cheapest first, then most seats left: the order an agent should read out.
-    results.sort(
-      (a, b) =>
-        a.credits - b.credits ||
-        (a.cashPrice?.amount ?? 0) - (b.cashPrice?.amount ?? 0) ||
-        b.seatsAvailable - a.seatsAvailable,
-    );
+    if (distanceById) {
+      for (const result of results) {
+        const km = distanceById.get(result.location.locationId);
+        if (km !== undefined) result.location = { ...result.location, distanceKm: km };
+      }
+      // Nearest first for a "near me" search; price and seats break ties.
+      results.sort(
+        (a, b) =>
+          (a.location.distanceKm ?? Number.POSITIVE_INFINITY) -
+            (b.location.distanceKm ?? Number.POSITIVE_INFINITY) ||
+          a.credits - b.credits ||
+          (a.cashPrice?.amount ?? 0) - (b.cashPrice?.amount ?? 0) ||
+          b.seatsAvailable - a.seatsAvailable,
+      );
+    } else {
+      results.sort(
+        (a, b) =>
+          a.credits - b.credits ||
+          (a.cashPrice?.amount ?? 0) - (b.cashPrice?.amount ?? 0) ||
+          b.seatsAvailable - a.seatsAvailable,
+      );
+    }
     return results.slice(0, clampLimit(args.limit));
   }
 
