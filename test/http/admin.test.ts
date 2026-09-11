@@ -7,6 +7,7 @@
  * page logic, not the WeWork parser or the DO.
  */
 
+import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const parseManualSession = vi.fn();
@@ -16,10 +17,17 @@ vi.mock("../../src/auth/_manual-shim", () => ({
   decodeJwtPayload: () => ({}),
 }));
 
+import { adminRoutes } from "../../src/auth/admin-session";
+import { oauthRoutes } from "../../src/auth/oauth";
 import { sha256Hex } from "../../src/auth/tokens";
 import type { SessionInfo, SessionRecord } from "../../src/core/types";
 import { AppError } from "../../src/errors";
-import { type AdminSessionStub, adminPages, bookmarkletSource, devtoolsSnippet } from "../../src/http/admin";
+import {
+  type AdminSessionStub,
+  adminPages,
+  bookmarkletSource,
+  devtoolsSnippet,
+} from "../../src/http/admin";
 import { fakeEnv, HTML_HEADERS } from "../auth/helpers";
 
 const ADMIN_TOKEN = "ops-token";
@@ -114,7 +122,11 @@ describe("GET /admin", () => {
   it("renders the session state, the caps and the links", async () => {
     const stub = fakeStub();
     const app = adminPages({ sessionStub: () => stub });
-    const response = await app.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, await adminEnv());
+    const response = await app.request(
+      "/admin",
+      { headers: { ...AUTH, ...HTML_HEADERS } },
+      await adminEnv(),
+    );
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("WeWork session");
@@ -138,7 +150,11 @@ describe("GET /admin", () => {
       })),
     });
     const app = adminPages({ sessionStub: () => stub });
-    const response = await app.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, await adminEnv());
+    const response = await app.request(
+      "/admin",
+      { headers: { ...AUTH, ...HTML_HEADERS } },
+      await adminEnv(),
+    );
     await expect(response.text()).resolves.toContain("No WeWork session stored yet");
   });
 
@@ -200,7 +216,11 @@ describe("GET /admin/connect", () => {
   it("escapes the bookmarklet into the href rather than emitting raw quotes", async () => {
     const app = adminPages({ sessionStub: () => fakeStub() });
     const html = await (
-      await app.request("/admin/connect", { headers: { ...AUTH, ...HTML_HEADERS } }, await adminEnv())
+      await app.request(
+        "/admin/connect",
+        { headers: { ...AUTH, ...HTML_HEADERS } },
+        await adminEnv(),
+      )
     ).text();
     expect(html).toContain("&#39;@@auth0spajs@@&#39;");
   });
@@ -324,7 +344,9 @@ describe("POST /admin/session", () => {
       await adminEnv(),
     );
     expect(response.status).toBe(303);
-    expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain("Nothing was pasted");
+    expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain(
+      "Nothing was pasted",
+    );
     expect(parseManualSession).not.toHaveBeenCalled();
   });
 
@@ -461,5 +483,48 @@ describe("GET /admin/status", () => {
     const body = (await response.json()) as { session: SessionInfo };
     expect(body.session.state).toBe("none");
     expect(body.session.lastError).toContain("No session.");
+  });
+});
+
+describe("composition with the other route groups", () => {
+  it("does not gate /admin/login when both groups are mounted on one app", async () => {
+    // `Hono#route()` copies a sub-app's middleware into the parent by path pattern,
+    // so a wildcard `app.use("/admin/*", requireAdmin)` inside adminPages() would
+    // also guard the login form and loop the redirect. This is the regression test
+    // for how src/index.ts mounts them.
+    const parent = new Hono<{ Bindings: ReturnType<typeof fakeEnv> }>();
+    parent.route("/", adminPages({ sessionStub: () => fakeStub() }));
+    parent.route("/", adminRoutes());
+    parent.route("/", oauthRoutes());
+
+    const env = await adminEnv();
+    const login = await parent.request("/admin/login", { headers: HTML_HEADERS }, env);
+    expect(login.status).toBe(200);
+    await expect(login.text()).resolves.toContain("Admin password");
+
+    const logout = await parent.request("/admin/logout", { headers: HTML_HEADERS }, env);
+    expect(logout.status).toBe(303);
+
+    // …while the pages themselves are still gated.
+    const dashboard = await parent.request("/admin", { headers: HTML_HEADERS }, env);
+    expect(dashboard.status).toBe(303);
+    expect(dashboard.headers.get("Location")).toBe("/admin/login?next=%2Fadmin");
+
+    // …and reachable with an admin token.
+    const authed = await parent.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, env);
+    expect(authed.status).toBe(200);
+  });
+
+  it("leaves the OAuth approval page reachable without the admin cookie", async () => {
+    const parent = new Hono<{ Bindings: ReturnType<typeof fakeEnv> }>();
+    parent.route("/", adminPages({ sessionStub: () => fakeStub() }));
+    parent.route("/", oauthRoutes());
+    const response = await parent.request(
+      "/oauth/authorize",
+      { headers: HTML_HEADERS },
+      await adminEnv(),
+    );
+    // 500 = our "provider not wired up" page: it reached the handler, not a redirect.
+    expect(response.status).toBe(500);
   });
 });

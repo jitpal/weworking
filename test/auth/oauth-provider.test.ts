@@ -50,7 +50,9 @@ async function testEnv(): Promise<Env> {
   const digest = await sha256Hex(STATIC_TOKEN);
   return {
     ...env,
-    AUTH_TOKENS: JSON.stringify([{ name: "integration", sha256: digest, scopes: ["read", "write"] }]),
+    AUTH_TOKENS: JSON.stringify([
+      { name: "integration", sha256: digest, scopes: ["read", "write"] },
+    ]),
   } as unknown as Env;
 }
 

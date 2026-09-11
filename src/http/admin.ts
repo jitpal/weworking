@@ -18,7 +18,8 @@
  */
 
 import { Hono } from "hono";
-// TEMP: replace at integration — re-exports src/wework/auth (§11.1).
+// Re-exports `parseManualSession` from src/wework/auth (§11.1); the indirection is
+// the seam the admin tests mock.
 import { parseManualSession } from "../auth/_manual-shim";
 import { type AdminEnv, readFormish, requireAdmin } from "../auth/admin-session";
 import { baseUrlFrom } from "../auth/guard";
@@ -78,12 +79,13 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
   const stubFor = deps.sessionStub ?? defaultSessionStub;
   const parse = deps.parseSession ?? parseManualSession;
 
-  app.use("/admin", requireAdmin);
-  app.use("/admin/*", requireAdmin);
+  // Per-route rather than `app.use("/admin/*", ...)`: `Hono#route()` copies a
+  // sub-app's middleware into the parent by path pattern, so a wildcard here would
+  // also gate `/admin/login` from `adminRoutes()` and loop the sign-in redirect.
 
   /* ------------------------------------------------------------ dashboard */
 
-  app.get("/admin", async (c) => {
+  app.get("/admin", requireAdmin, async (c) => {
     const status = await collectStatus(c.env, stubFor);
     const flash = c.req.query("flash");
     const problem = c.req.query("error");
@@ -99,7 +101,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
 
   /* -------------------------------------------------------------- connect */
 
-  app.get("/admin/connect", (c) => {
+  app.get("/admin/connect", requireAdmin, (c) => {
     const baseUrl = baseUrlFrom(c.req.raw, c.env);
     return htmlResponse(
       connectPage({
@@ -112,7 +114,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
 
   /* -------------------------------------------------------------- session */
 
-  app.post("/admin/session", async (c) => {
+  app.post("/admin/session", requireAdmin, async (c) => {
     const wantsJson = expectsJson(c.req.raw);
     const form = await readFormish(c.req.raw);
     const pasted = (form.session ?? "").trim();
@@ -158,7 +160,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
     );
   });
 
-  app.post("/admin/session/clear", async (c) => {
+  app.post("/admin/session/clear", requireAdmin, async (c) => {
     await stubFor(c.env).clearSession();
     if (expectsJson(c.req.raw)) return c.json({ ok: true, cleared: true }, 200);
     return c.redirect(
@@ -169,7 +171,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
 
   /* ---------------------------------------------------------------- audit */
 
-  app.get("/admin/audit", async (c) => {
+  app.get("/admin/audit", requireAdmin, async (c) => {
     const limit = clampLimit(c.req.query("limit"));
     const rows = await stubFor(c.env).listAudit({ limit });
     if (c.req.query("format") === "json") {
@@ -180,7 +182,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
 
   /* --------------------------------------------------------------- status */
 
-  app.get("/admin/status", async (c) => {
+  app.get("/admin/status", requireAdmin, async (c) => {
     const status = await collectStatus(c.env, stubFor);
     return c.json(
       {

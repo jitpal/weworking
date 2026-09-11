@@ -17,8 +17,8 @@ import {
   cookieHeader,
   cookiesFrom,
   fakeEnv,
-  hiddenField,
   HTML_HEADERS,
+  hiddenField,
 } from "./helpers";
 
 const app = oauthRoutes();
@@ -107,6 +107,11 @@ async function approve(options: {
   return { response, provider: form.provider, form };
 }
 
+/** First argument of the first `completeAuthorization()` call, untyped by design. */
+function firstCall(provider: ReturnType<typeof fakeProvider>): unknown {
+  return (provider.completeAuthorization.mock.calls as unknown as unknown[][])[0]?.[0];
+}
+
 beforeEach(() => {
   clearFailures();
 });
@@ -185,11 +190,7 @@ describe("GET /oauth/authorize", () => {
   });
 
   it("reports a missing provider binding instead of throwing", async () => {
-    const response = await app.request(
-      "/oauth/authorize",
-      { headers: HTML_HEADERS },
-      fakeEnv(),
-    );
+    const response = await app.request("/oauth/authorize", { headers: HTML_HEADERS }, fakeEnv());
     expect(response.status).toBe(500);
     await expect(response.text()).resolves.toContain("OAuth provider not wired up");
   });
@@ -202,7 +203,7 @@ describe("POST /oauth/authorize", () => {
     expect(response.headers.get("Location")).toContain("code=abc");
 
     expect(provider.completeAuthorization).toHaveBeenCalledTimes(1);
-    const call = provider.completeAuthorization.mock.calls[0]?.[0] as {
+    const call = firstCall(provider) as {
       request: AuthRequest;
       userId: string;
       scope: string[];
@@ -224,7 +225,7 @@ describe("POST /oauth/authorize", () => {
   it("grants only the ticked scopes", async () => {
     const { response, provider } = await approve({ password: ADMIN_PASSWORD, scopes: ["read"] });
     expect(response.status).toBe(302);
-    const call = provider.completeAuthorization.mock.calls[0]?.[0] as { scope: string[] };
+    const call = firstCall(provider) as { scope: string[] };
     expect(call.scope).toEqual(["read"]);
   });
 
@@ -233,7 +234,7 @@ describe("POST /oauth/authorize", () => {
       password: ADMIN_PASSWORD,
       scopes: ["read", "write", "admin"],
     });
-    const call = provider.completeAuthorization.mock.calls[0]?.[0] as { scope: string[] };
+    const call = firstCall(provider) as { scope: string[] };
     expect(call.scope).toEqual(["read", "write"]);
   });
 

@@ -124,9 +124,7 @@ export function mountMcp(app: Hono<{ Bindings: Env }>, opts: MountMcpOptions): v
 
   app.all(route, async (c) => {
     const request = c.req.raw;
-    // The OAuth provider exposes the grant's props on the execution context; it is
-    // absent for static bearer tokens and in tests.
-    const props = (c.executionCtx as (ExecutionContext & { props?: unknown }) | undefined)?.props;
+    const props = oauthProps(c);
 
     let actor: Actor | null;
     try {
@@ -159,6 +157,22 @@ export function mountMcp(app: Hono<{ Bindings: Env }>, opts: MountMcpOptions): v
     );
     return await handler.fetch(request);
   });
+}
+
+/**
+ * The OAuth grant's decrypted props, which `@cloudflare/workers-oauth-provider` puts on
+ * the execution context.
+ *
+ * Hono's `c.executionCtx` *throws* when there is no execution context — which is the
+ * normal case for `app.request()` in a test, and for any non-OAuth credential — so the
+ * access is guarded rather than optional-chained.
+ */
+function oauthProps(c: { executionCtx: ExecutionContext }): unknown {
+  try {
+    return (c.executionCtx as ExecutionContext & { props?: unknown }).props;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

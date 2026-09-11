@@ -1,22 +1,13 @@
 /**
- * TEMP: replace at integration.
+ * Indirection for the one function the admin pages need from the WeWork auth module
+ * (§11.1 of the build spec): `parseManualSession`.
  *
- * `src/http/admin.ts` needs `parseManualSession` from the WeWork auth module
- * (§11.1 of the build spec), whose barrel `src/wework/auth/index.ts` does not exist
- * yet — only the implementation file `src/wework/auth/manual.ts` does. This module
- * is the single place that knows that, so the admin pages can import a stable path.
- *
- * ## Integration (one edit)
- *
- * Once `src/wework/auth/index.ts` re-exports it, change the line below to
- *
- * ```ts
- * export { parseManualSession } from "../wework/auth";
- * ```
- *
- * …or point `src/http/admin.ts` at `"../wework/auth"` and delete this file. The
- * admin tests mock *this* module path, so they keep passing either way.
+ * It existed because `src/wework/auth/index.ts` was being written concurrently. That
+ * barrel now exists, so this file is a plain re-export — the *real* implementation is
+ * used in production and in tests. It stays as the single seam the admin tests mock
+ * (`vi.mock("../../src/auth/_manual-shim")`), which is why it is not deleted; point
+ * `src/http/admin.ts` straight at `"../wework/auth"` and delete it if you would
+ * rather have one less file.
  */
 
-// TEMP: replace at integration with "../wework/auth".
-export { decodeJwtPayload, parseManualSession } from "../wework/auth/manual";
+export { decodeJwtPayload, parseManualSession } from "../wework/auth";

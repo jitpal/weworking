@@ -17,6 +17,7 @@
  * discovers that this server speaks OAuth at all.
  */
 
+import type { MiddlewareHandler } from "hono";
 import type { Actor, Scope } from "../core/types";
 import type { Env } from "../env";
 import { AppError, type ErrorBody } from "../errors";
@@ -168,4 +169,45 @@ export function baseUrlFrom(request: Request, env: Env): string {
     }
   }
   return new URL(request.url).origin;
+}
+
+/**
+ * Hono middleware for the protected route groups (`/mcp`, `/api/*`).
+ *
+ * It reads the OAuth provider's decrypted props off the execution context
+ * (`ctx.props`, which is where `@cloudflare/workers-oauth-provider` puts them),
+ * falls back to the `Authorization` header, stores the result under
+ * `c.get("actor")`, and answers {@link unauthorizedResponse} when there is no valid
+ * credential. Scope checks stay with the routes, which know what they need.
+ *
+ * @example
+ * app.use("/mcp", actorMiddleware());
+ * app.use("/api/*", actorMiddleware());
+ */
+export function actorMiddleware(): MiddlewareHandler<{
+  Bindings: Env;
+  Variables: { actor?: Actor };
+}> {
+  return async (c, next) => {
+    const actor = await resolveActor(c.req.raw, c.env, propsFromContext(executionContextOf(c)));
+    if (!actor) return unauthorizedResponse(baseUrlFrom(c.req.raw, c.env));
+    c.set(ACTOR_CONTEXT_KEY, actor);
+    await next();
+  };
+}
+
+/** `c.executionCtx` where there is one — Hono throws when the app was invoked without it. */
+function executionContextOf(c: { executionCtx: unknown } | unknown): unknown {
+  if (typeof c !== "object" || c === null) return undefined;
+  try {
+    return (c as { executionCtx: unknown }).executionCtx;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `ctx.props` when the provider set it, without assuming the context has one. */
+export function propsFromContext(ctx: unknown): unknown {
+  if (typeof ctx !== "object" || ctx === null) return undefined;
+  return (ctx as { props?: unknown }).props;
 }

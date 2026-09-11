@@ -7,7 +7,6 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Env } from "../../src/env";
 import {
   constantTimeEqual,
   matchStaticToken,
@@ -15,6 +14,7 @@ import {
   resetStaticTokenCache,
   sha256Hex,
 } from "../../src/auth/tokens";
+import type { Env } from "../../src/env";
 
 /** `sha256Hex("dev-token")`, computed by the implementation in the first test. */
 const DEV_TOKEN = "dev-token";
@@ -117,7 +117,9 @@ describe("matchStaticToken", () => {
   it("resolves a configured token to a bearer Actor", async () => {
     const digest = await sha256Hex(DEV_TOKEN);
     const env = envWith(
-      JSON.stringify([{ name: "claude-code", sha256: digest.toUpperCase(), scopes: ["read", "write"] }]),
+      JSON.stringify([
+        { name: "claude-code", sha256: digest.toUpperCase(), scopes: ["read", "write"] },
+      ]),
     );
     await expect(matchStaticToken(env, DEV_TOKEN)).resolves.toEqual({
       kind: "bearer",

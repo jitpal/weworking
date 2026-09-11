@@ -6,12 +6,15 @@
  * raw request, because `src/index.ts` may do either.
  */
 
+import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
+  actorMiddleware,
   baseUrlFrom,
   bearerToken,
   hasScope,
   isOAuthActorProps,
+  propsFromContext,
   requireScope,
   resolveActor,
   unauthorizedResponse,
@@ -30,7 +33,10 @@ async function envWithToken(scopes: string[] = ["read", "write"]): Promise<Env> 
   } as unknown as Env;
 }
 
-function request(headers: Record<string, string> = {}, url = "https://worker.example/mcp"): Request {
+function request(
+  headers: Record<string, string> = {},
+  url = "https://worker.example/mcp",
+): Request {
   return new Request(url, { headers });
 }
 
@@ -179,5 +185,36 @@ describe("baseUrlFrom", () => {
         PUBLIC_BASE_URL: "not a url",
       } as unknown as Env),
     ).toBe("https://worker.workers.dev");
+  });
+});
+
+describe("actorMiddleware", () => {
+  it("sets the actor from a static bearer token and lets the route run", async () => {
+    const app = new Hono<{ Bindings: Env; Variables: { actor?: Actor } }>();
+    app.use("/mcp", actorMiddleware());
+    app.get("/mcp", (c) => c.json({ actor: c.get("actor") }));
+    const response = await app.request(
+      "/mcp",
+      { headers: { Authorization: `Bearer ${TOKEN}` } },
+      await envWithToken(),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { actor: Actor };
+    expect(body.actor).toMatchObject({ kind: "bearer", name: "claude-code" });
+  });
+
+  it("answers 401 with the challenge when no credential is presented", async () => {
+    const app = new Hono<{ Bindings: Env; Variables: { actor?: Actor } }>();
+    app.use("/mcp", actorMiddleware());
+    app.get("/mcp", (c) => c.json({ ok: true }));
+    const response = await app.request("/mcp", {}, await envWithToken());
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+  });
+
+  it("reads props off an execution context without assuming it has any", () => {
+    expect(propsFromContext({ props: { name: "x" } })).toEqual({ name: "x" });
+    expect(propsFromContext({})).toBeUndefined();
+    expect(propsFromContext(undefined)).toBeUndefined();
   });
 });
