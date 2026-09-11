@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { SessionRpc, WeWorkApi } from "../../src/core/booking-service";
 import { signQuote } from "../../src/core/quote";
 import type { QuotePayload } from "../../src/core/types";
-import { isAppError } from "../../src/errors";
+import { AppError, isAppError } from "../../src/errors";
 import type { WeWorkSession } from "../../src/session/do";
 import type { WeWorkApi as ClientWeWorkApi } from "../../src/wework/client";
 import {
@@ -138,6 +138,58 @@ describe("listLocations", () => {
 });
 
 describe("searchAvailability", () => {
+  it("prices pay-as-you-go spaces through the quote call in the building's currency", async () => {
+    // Live-verified against an "On Demand" account: get-spaces says 0 credits and
+    // lists a pre-tax day rate; the quote returns the tax-inclusive total.
+    const harness = createHarness({
+      apiScript: {
+        spaces: [
+          makeSpace({
+            credits: 0,
+            cashPrice: { amount: 70, currency: "GBP" },
+            location: makeLocation({ currency: "GBP" }),
+          }),
+        ],
+        price: { credits: 0, creditRatio: 20, amount: 84, currency: "GBP" },
+      },
+    });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
+    const result = results[0];
+    if (!result) throw new Error("no result");
+    expect(result.cashPrice).toEqual({ amount: 84, currency: "GBP" });
+    expect(result.credits).toBe(0);
+    expect(result.summary).toContain("£84.00");
+    expect(harness.api.calls.find((c) => c.method === "quote")?.args).toMatchObject({
+      currency: "GBP",
+    });
+    const payload = JSON.parse(atob(result.quote.split(".")[0] as string)) as QuotePayload;
+    expect(payload).toMatchObject({ amount: 84, currency: "GBP" });
+  });
+
+  it("still returns the option when the cash quote fails, marked price unavailable", async () => {
+    const harness = createHarness({
+      apiScript: {
+        spaces: [makeSpace({ credits: 0, location: makeLocation({ currency: "GBP" }) })],
+        fail: { quote: new AppError("UPSTREAM_ERROR", "quote down") },
+      },
+    });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.summary).toContain("price unavailable");
+  });
+
+  it("does not call the quote endpoint for credit-priced spaces", async () => {
+    const harness = createHarness();
+    await harness.service.searchAvailability({ locationId: "loc-poultry", date: DATE });
+    expect(harness.api.calls.some((c) => c.method === "quote")).toBe(false);
+  });
+
   it("returns a signed quote and a local-time summary per option", async () => {
     const harness = createHarness();
     const results = await harness.service.searchAvailability({

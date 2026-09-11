@@ -399,9 +399,19 @@ describe("resolveBookingSpaceId", () => {
   /** The accountType 4 workspace from the fixture (inventoryUuid, no KubeId). */
   const space4 = () => fixtureSpace(1);
 
+  it("skips inventory-details for accountType 2 when get-spaces already carried the KubeId", async () => {
+    // Live-verified: inventory-details answers HTTP 500 for these buildings and
+    // reservable.KubeId is the id the booking call wants.
+    const { client, fetchStub } = makeClient([]);
+    await expect(client.resolveBookingSpaceId(space2())).resolves.toBe("kube-space-0001");
+    expect(fetchStub.calls).toHaveLength(0);
+  });
+
   it("prefers kubeSpaceId from inventory-details, with the renamed parameters", async () => {
     const { client, fetchStub } = makeClient([route("GET", INVENTORY_URL, inventoryDetails)]);
-    await expect(client.resolveBookingSpaceId(space2())).resolves.toBe(
+    const withoutKube = { ...space2() };
+    delete withoutKube.kubeId;
+    await expect(client.resolveBookingSpaceId(withoutKube)).resolves.toBe(
       "kube-space-from-inventory-0001",
     );
     expect(queryOf(fetchStub.calls[0]?.url ?? "")).toEqual({
@@ -413,8 +423,12 @@ describe("resolveBookingSpaceId", () => {
 
   it("falls back to the accountType rules when kubeSpaceId is empty", async () => {
     const { client } = makeClient([route("GET", INVENTORY_URL, inventoryDetailsEmpty)]);
-    // accountType 2 -> reservable.KubeId.
-    await expect(client.resolveBookingSpaceId(space2())).resolves.toBe("kube-space-0001");
+    // accountType 2 with no KubeId in get-spaces -> inventory-details (empty) -> uuid cascade.
+    const withoutKube = { ...space2() };
+    delete withoutKube.kubeId;
+    await expect(client.resolveBookingSpaceId(withoutKube)).resolves.toBe(
+      withoutKube.inventoryUuid ?? withoutKube.spaceId,
+    );
   });
 
   it("falls back gracefully when inventory-details fails outright", async () => {
@@ -536,17 +550,23 @@ describe("quote", () => {
 
   it("returns the credit ratio the booking call must echo", async () => {
     const { client } = makeClient([route("POST", QUOTE_URL, quoteFixture)]);
+    // `grandTotal.currency` only echoes the request's Currency, so the credits
+    // label is dropped rather than reported as a currency.
     await expect(client.quote(sampleQuote())).resolves.toEqual({
       credits: 10,
       creditRatio: 1.5,
       amount: 0,
-      currency: "com.wework.credits",
     });
   });
 
-  it("fails when upstream returns no credit ratio", async () => {
-    const { client } = makeClient([route("POST", QUOTE_URL, { grandTotal: { credits: 10 } })]);
-    await expectAppError(client.quote(sampleQuote()), "UPSTREAM_ERROR");
+  it("tolerates a missing credit ratio (pay-as-you-go accounts) and reports it as 0", async () => {
+    const { client } = makeClient([
+      route("POST", QUOTE_URL, { grandTotal: { amount: 84, currency: "GBP", symbol: "£" } }),
+    ]);
+    const priced = await client.quote(sampleQuote());
+    expect(priced.creditRatio).toBe(0);
+    expect(priced.amount).toBe(84);
+    expect(priced.currency).toBe("GBP");
   });
 
   it("enforces the 30-minute grid before calling upstream", async () => {

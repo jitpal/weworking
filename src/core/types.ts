@@ -67,6 +67,8 @@ export interface Location {
   openTime?: string;
   /** Building closing time, local wall clock `"HH:MM"`, when known. */
   closeTime?: string;
+  /** ISO 4217 code the building prices in, e.g. `"GBP"`; what pay-as-you-go quotes use. */
+  currency?: string;
 }
 
 /** One bookable slot at one location on one day, as returned by a search. */
@@ -141,6 +143,10 @@ export interface QuotePayload {
   spaceName?: string;
   /** Desk capacity, used in the confirmation-email block. */
   capacity?: number;
+  /** Cash price for pay-as-you-go accounts, from WeWork's quote call. Absent on credit accounts. */
+  amount?: number;
+  /** ISO 4217 code for `amount`, e.g. `"GBP"`. */
+  currency?: string;
 }
 
 /** A booking, either just created or read back from the upstream bookings list. */

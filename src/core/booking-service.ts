@@ -22,7 +22,7 @@
  * Every failure is an {@link ../errors!AppError} with a `hint` written for an agent.
  */
 
-import { AppError, isAppError } from "../errors";
+import { AppError, isAppError, toErrorBody } from "../errors";
 import { sha256Hex, signQuote, verifyQuote } from "./quote";
 import {
   addDays,
@@ -389,10 +389,33 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
         capacity: space.capacity,
       };
 
+      // Pay-as-you-go accounts show no credits; the price lives in WeWork's quote
+      // call, which prices a slot without reserving it. One extra request per
+      // space, only when needed.
+      let cashPrice = space.cashPrice;
+      if (space.credits === 0) {
+        const currency = space.location.currency ?? cashPrice?.currency;
+        if (currency) payload.currency = currency;
+        try {
+          const priced = await api.quote(payload);
+          const settled = priced.currency ?? currency;
+          if (priced.amount !== undefined && settled) {
+            cashPrice = { amount: priced.amount, currency: settled };
+            payload.amount = cashPrice.amount;
+            payload.currency = cashPrice.currency;
+          }
+          if (priced.credits > 0) payload.credits = priced.credits;
+        } catch (err) {
+          console.warn("search: quote for cash price failed", toErrorBody(err));
+        }
+      }
+
       const quote = await signQuote(payload, quoteKey);
-      const summary = summariseSpace(space, date, window, tz);
+      const summary = summariseSpace(space, date, window, tz, payload, cashPrice);
       results.push({
         ...space,
+        ...(cashPrice ? { cashPrice } : {}),
+        credits: payload.credits,
         date,
         startLocal: window.startLocal,
         endLocal: window.endLocal,
@@ -405,7 +428,12 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     }
 
     // Cheapest first, then most seats left: the order an agent should read out.
-    results.sort((a, b) => a.credits - b.credits || b.seatsAvailable - a.seatsAvailable);
+    results.sort(
+      (a, b) =>
+        a.credits - b.credits ||
+        (a.cashPrice?.amount ?? 0) - (b.cashPrice?.amount ?? 0) ||
+        b.seatsAvailable - a.seatsAvailable,
+    );
     return results.slice(0, clampLimit(args.limit));
   }
 
@@ -481,7 +509,24 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
 
     try {
       const priced = await api.quote(payload);
-      if (Math.abs(priced.credits - payload.credits) > CREDIT_TOLERANCE) {
+      if (
+        payload.amount !== undefined &&
+        priced.amount !== undefined &&
+        Math.abs(priced.amount - payload.amount) > 0.005
+      ) {
+        throw new AppError(
+          "BOOKING_REFUSED",
+          `WeWork now prices this slot at ${formatMoney(priced.amount, priced.currency ?? payload.currency)}, not the ${formatMoney(payload.amount, payload.currency)} in the quote.`,
+          {
+            hint: "price changed, search again",
+            details: { quotedAmount: payload.amount, currentAmount: priced.amount },
+          },
+        );
+      }
+      if (
+        payload.amount === undefined &&
+        Math.abs(priced.credits - payload.credits) > CREDIT_TOLERANCE
+      ) {
         throw new AppError(
           "BOOKING_REFUSED",
           `WeWork now prices this slot at ${priced.credits} credits, not the ${payload.credits} in the quote.`,
@@ -802,11 +847,30 @@ function summariseSpace(
   date: string,
   window: SlotWindow,
   tz: string,
+  payload: QuotePayload,
+  cashPrice?: { amount: number; currency: string },
 ): string {
   const where = space.location.city
     ? `${space.location.name}, ${space.location.city}`
     : space.location.name;
-  return `Desk at ${where} on ${date} ${window.startTime}-${window.endTime} (${tz}), ${space.credits} credits, ${space.seatsAvailable} seats left`;
+  const price = cashPrice
+    ? formatMoney(cashPrice.amount, cashPrice.currency)
+    : payload.credits > 0
+      ? `${payload.credits} credits`
+      : "price unavailable";
+  return `Desk at ${where} on ${date} ${window.startTime}-${window.endTime} (${tz}), ${price}, ${space.seatsAvailable} seats left`;
+}
+
+/** `"£45.00"` for ISO currency codes, `"45 com.wework.credits"` for anything else. */
+export function formatMoney(amount: number, currency?: string): string {
+  if (currency && /^[A-Z]{3}$/.test(currency)) {
+    try {
+      return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount);
+    } catch {
+      // fall through
+    }
+  }
+  return currency ? `${amount} ${currency}` : String(amount);
 }
 
 /** `"1 Poultry, London, Mon 21 Sep 09:00-17:00 (Europe/London)"`. */

@@ -67,6 +67,15 @@ No parameters. Call this first if you do not know whether the deployment is conn
 
 `whoami` never returns a WeWork token. If `session.state` is `none` or `expired`, stop and tell the user to reconnect.
 
+### Credits or cash
+
+WeWork bills some memberships in monthly credits and others (such as "On Demand") in money. Every availability result carries both fields:
+
+- `credits`: the credit cost from WeWork's listing. `0` on a pay-as-you-go account.
+- `cashPrice`: `{ "amount": 84, "currency": "GBP" }`, present on pay-as-you-go accounts. It is the tax-inclusive total from WeWork's quote call, which prices a slot without reserving it, so a cash-account search costs one extra upstream request per space.
+
+The `summary` line shows whichever applies ("84 credits" or "£84.00"), or "price unavailable" if the quote call failed. Booking re-checks the price against the signed quote and refuses with `BOOKING_REFUSED` if it moved. `whoami.credits` is absent on cash accounts, and `whoami.profile.membershipType` reads "On Demand" for them.
+
 ### list_locations
 
 | Param | Type | Notes |

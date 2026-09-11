@@ -419,7 +419,9 @@ export function mapLocation(
     timezone: first(str(raw.timeZone), str(raw.timezone)) ?? "",
     accountType: first(num(raw.accountType), 0) ?? 0,
     timezoneOffset:
-      first(normaliseOffset(raw.timezoneOffset), normaliseOffset(raw.timeZoneOffset)) ?? "+00:00",
+      first(normaliseOffset(raw.timezoneOffset), normaliseOffset(raw.timeZoneOffset)) ??
+      offsetStringForZone(first(str(raw.timeZone), str(raw.timezone))) ??
+      "+00:00",
   };
 
   if (latitude !== undefined) location.latitude = latitude;
@@ -429,6 +431,8 @@ export function mapLocation(
   const closeTime = padTime(raw.closeTime);
   if (openTime) location.openTime = openTime;
   if (closeTime) location.closeTime = closeTime;
+  const currency = str(raw.currency);
+  if (currency && /^[A-Z]{3}$/.test(currency)) location.currency = currency;
 
   const upstreamDistance = first(num(raw.distanceInKm), num(raw.distance));
   if (upstreamDistance !== undefined) {
@@ -441,6 +445,19 @@ export function mapLocation(
 }
 
 /** Maps the `locationsByGeo` array, dropping unusable entries. */
+/** The current UTC offset of an IANA zone as `"+HH:MM"`, or undefined when unknown. */
+export function offsetStringForZone(
+  timeZone: string | undefined,
+  at = Date.now(),
+): string | undefined {
+  if (!timeZone) return undefined;
+  const minutes = zoneOffsetMinutesAt(at, timeZone);
+  if (minutes === undefined) return undefined;
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
 export function mapLocations(values: unknown[], options: MapLocationOptions = {}): Location[] {
   const out: Location[] = [];
   for (const value of values) {
@@ -548,9 +565,12 @@ export function mapWorkspace(
   const kubeId = first(str(raw.reservable?.KubeId), str(raw.reservable?.kubeId));
   if (kubeId) space.kubeId = kubeId;
 
-  const cashAmount = num(raw.price);
-  const currency = str(raw.currency);
-  if (cashAmount !== undefined && currency) {
+  // Live shape: `productPrice.price = { currency: "GBP", amount: 70, symbol: "£" }`, the
+  // day rate before tax. The quote call returns the tax-inclusive total.
+  const listed = raw.productPrice?.price;
+  const cashAmount = first(num(listed?.amount), num(raw.price));
+  const currency = first(str(listed?.currency), str(raw.currency));
+  if (cashAmount !== undefined && currency && /^[A-Z]{3}$/.test(currency)) {
     space.cashPrice = { amount: cashAmount, currency };
   }
 
@@ -621,13 +641,26 @@ export function mapProfile(raw: RawProfileResponse, fallbackUserId: string): Pro
     ) ?? undefined;
   if (name) profile.name = name;
 
-  const membershipType = first(str(source.membershipType), str(source.membership));
+  // Live shape: `companies[0].preferredMembershipNullable.membershipType` is
+  // "On Demand" for pay-as-you-go accounts.
+  const company = Array.isArray(raw.companies)
+    ? (raw.companies[0] as
+        | { preferredMembershipNullable?: { membershipType?: unknown; productName?: unknown } }
+        | undefined)
+    : undefined;
+  const membershipType = first(
+    str(source.membershipType),
+    str(source.membership),
+    str(company?.preferredMembershipNullable?.membershipType),
+    str(company?.preferredMembershipNullable?.productName),
+  );
   if (membershipType) profile.membershipType = membershipType;
 
   const homeLocationId = first(
     str(source.homeLocationUUID),
     str(source.homeLocationUuid),
     str(source.defaultLocationUUID),
+    str(raw.homeLocation?.uuid),
   );
   if (homeLocationId) profile.homeLocationId = homeLocationId;
 

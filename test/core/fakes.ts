@@ -165,8 +165,8 @@ export interface FakeApiScript {
     | SpaceAvailability[]
     | ((args: { locationIds: string[]; date: string }) => SpaceAvailability[]);
   bookingSpaceId?: string;
-  /** Price returned at booking time — set `credits` differently to simulate a price change. */
-  price?: { credits: number; creditRatio: number };
+  /** Price returned by the quote call. Set `credits` or `amount` differently to simulate a price change. */
+  price?: { credits: number; creditRatio: number; amount?: number; currency?: string };
   bookResult?: { reservationId: string; status: string; raw?: unknown };
   bookings?: Booking[];
   /** Make one method reject, to exercise the rollback paths. */
@@ -228,7 +228,11 @@ export function createFakeApi(script: FakeApiScript = {}): FakeApi {
       return script.bookingSpaceId ?? space.kubeId ?? space.spaceId;
     },
     async quote(payload: QuotePayload) {
-      record("quote", { spaceId: payload.spaceId, credits: payload.credits });
+      record("quote", {
+        spaceId: payload.spaceId,
+        credits: payload.credits,
+        currency: payload.currency,
+      });
       return script.price ?? { credits: payload.credits, creditRatio: 1 };
     },
     async book(payload, creditRatio) {

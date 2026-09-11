@@ -88,6 +88,8 @@ export interface RawLocation {
   openTime?: unknown;
   closeTime?: unknown;
   isOpen?: unknown;
+  /** ISO 4217 code the building prices in (live: `"GBP"`). */
+  currency?: unknown;
 }
 
 /** `GET /wework-yardi/ondemand/get-locations-by-geo`. */
@@ -151,6 +153,8 @@ export interface RawWorkspace {
   /** `0` is the hot-desk/shared-workspace type in `get-spaces`. */
   spaceType?: unknown;
   type?: unknown;
+  /** Live shape: `{ price: { currency, amount, symbol }, rateUnit, halfHourCreditPrices[] }`. */
+  productPrice?: { price?: { currency?: unknown; amount?: unknown; symbol?: unknown } } | null;
 }
 
 /** `GET /spaces/get-spaces`. */
@@ -194,6 +198,10 @@ export interface RawProfileResponse extends RawEnvelope {
   defaultLocationUUID?: unknown;
   /** Some builds wrap everything in `userProfile`. */
   userProfile?: RawProfileResponse;
+  /** Live shape: `{ uuid, name, currency, timeZone, address{city,country} }`. */
+  homeLocation?: { uuid?: unknown; currency?: unknown; timeZone?: unknown } | null;
+  /** Live shape: `[{ uuid, name, preferredMembershipNullable: { membershipType, productName } }]`. */
+  companies?: unknown;
 }
 
 /** `GET /common-account/monthly-credits`. */

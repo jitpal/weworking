@@ -38,14 +38,14 @@ Six MCP tools, mirrored by REST routes:
 | --- | --- |
 | `whoami` | profile, credit balance, session state, your scopes, caps, write kill-switch state |
 | `list_locations` | search WeWork buildings by city, text, or lat/lng radius |
-| `search_availability` | hot desks for a date/time window; each result carries a signed `quote` |
+| `search_availability` | hot desks for a date/time window, priced in credits or cash; each result carries a signed `quote` |
 | `create_booking` | books a desk from a quote; supports `dry_run` and `idempotency_key` |
 | `list_bookings` | upcoming (and optionally past) bookings |
 | `cancel_booking` | cancels by booking id |
 
 Safety rails, because this spends real money:
 
-- **Signed quotes.** `create_booking` accepts only an HMAC-SHA-256 signed `quote` produced by `search_availability` (10 min TTL by default). An agent cannot invent a booking out of free-text parameters.
+- **Signed quotes.** `create_booking` accepts only an HMAC-SHA-256 signed `quote` produced by `search_availability` (10 min TTL by default). An agent cannot invent a booking out of free-text parameters, and the price the user saw is the price that gets re-checked at booking time.
 - **Idempotency.** `idempotency_key` on writes; replays return the original result instead of double-booking.
 - **Daily and weekly caps.** `MAX_BOOKINGS_PER_DAY`, `MAX_BOOKINGS_PER_WEEK`, and an optional `MAX_CREDITS_PER_BOOKING` ceiling, enforced in the Durable Object.
 - **`dry_run`.** Validates the quote, caps, and availability and returns the exact booking it *would* make, without calling WeWork's booking endpoint.

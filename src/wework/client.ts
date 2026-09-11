@@ -250,7 +250,11 @@ export class WeWorkClient implements WeWorkApi {
         isWeb: true,
       },
     });
-    return this.#rememberLocations(mapLocations(arrayAt(body, "locationsByGeo", "locations")));
+    const items = arrayAt(body, "locationsByGeo", "locations");
+    const mapped = mapLocations(items);
+    // No search origin, so any upstream distance is relative to nothing useful.
+    for (const location of mapped) delete location.distanceKm;
+    return this.#rememberLocations(mapped);
   }
 
   /**
@@ -410,6 +414,10 @@ export class WeWorkClient implements WeWorkApi {
    * preferred id for that account type is missing.
    */
   async resolveBookingSpaceId(space: SpaceAvailability): Promise<string> {
+    // `accountType` 2 buildings hand the booking id straight to get-spaces as
+    // `reservable.KubeId` (live-verified); inventory-details answers HTTP 500 for
+    // them, so it is only consulted when that id is missing.
+    if (space.location.accountType === 2 && space.kubeId) return space.kubeId;
     const kubeSpaceId = await this.#tryInventoryDetails(space);
     if (kubeSpaceId) return kubeSpaceId;
     return spaceIdByAccountType(space);
@@ -433,22 +441,20 @@ export class WeWorkClient implements WeWorkApi {
       body: buildQuoteBody(payload, spaceId),
     })) as RawQuoteResponse | null;
 
-    const creditRatio = first(num(body?.grandTotal?.creditRatio), num(body?.creditRatio));
-    if (creditRatio === undefined) {
-      throw new AppError(
-        "UPSTREAM_ERROR",
-        "WeWork's quote response carried no creditRatio, so a booking cannot be built from it.",
-      );
-    }
+    // Credit accounts get a creditRatio; pay-as-you-go accounts may not. The
+    // booking call echoes whatever we have, and `0` matches what the web app sends
+    // when there is none.
+    const creditRatio = first(num(body?.grandTotal?.creditRatio), num(body?.creditRatio), 0) ?? 0;
 
     const result: QuoteResult = {
       credits: first(num(body?.grandTotal?.credits), num(body?.credits), q.credits) ?? q.credits,
       creditRatio,
     };
     const amount = first(num(body?.grandTotal?.total), num(body?.grandTotal?.amount));
+    // `currency` echoes the request; only a real ISO code is worth keeping.
     const currency = str(body?.grandTotal?.currency);
     if (amount !== undefined) result.amount = amount;
-    if (currency) result.currency = currency;
+    if (currency && /^[A-Z]{3}$/.test(currency)) result.currency = currency;
     return result;
   }
 
@@ -765,7 +771,8 @@ export function buildQuoteBody(q: QuotePayloadWithQuoteSpaceId, spaceId: string)
     MailData: buildMailData(q, startUtc, endUtc),
     LocationType: q.accountType,
     UTCOffset: q.tzOffset,
-    Currency: CREDITS_CURRENCY,
+    // Credit accounts price in credits; pay-as-you-go accounts in their local currency.
+    Currency: q.currency ?? CREDITS_CURRENCY,
     LocationID: q.locationId,
     SpaceID: spaceId,
     WeWorkSpaceID: q.wwSpaceId,

@@ -66,3 +66,15 @@ Last reviewed: 2026-09-11.
 - Tools: whoami, list_locations, search_availability, create_booking, list_bookings, cancel_booking ; REST mirror /api/* + /openapi.json ; plugin/ (Agent Plugins 1.0.0: plugin.json, mcp.json, skills/*/SKILL.md)
 - Tests: @cloudflare/vitest-pool-workers, scrubbed fixtures, stub fetch. CI: typecheck+test+deploy --dry-run; deploy.yml on main with environment guard.
 - OSS: MIT, unofficial disclaimer, no baked creds, .dev.vars.example, Deploy button (verify DO-only), multi-account deferred but accountId seam.
+
+## Live-verified on 2026-09-11 (pay-as-you-go "On Demand" account, London)
+
+Observed from a real deployment on Cloudflare Workers. These supersede the inferred notes above where they differ.
+
+- **Headless Auth0 login from a Worker works.** The password-realm + PKCE flow succeeded on the first attempt from Cloudflare egress, returned a refresh token, and the access token lasted 12 hours.
+- **`get-locations-by-geo` item:** `{ uuid, name, latitude, longitude, address: { line1, line2, city, state, country, zip }, timeZone, distance, brandName, accountType, currency, spaceAvailabilityCount, ... }`. On a city search `address.country` is empty and `distance` is meaningless (no origin), so both are dropped. There is no offset field; derive it from `timeZone`.
+- **`get-spaces` workspace:** `{ uuid, inventoryUuid, capacity, credits, location, openTime, closeTime, cancellationPolicy, operatingHours, productPrice, seat, seatsAvailable, reservable, isHybridSpace, affiliateSpaceType, SpaceTypeID }`. `productPrice.price = { currency: "GBP", amount: 70, symbol: "£" }` is the pre-tax day rate; `productPrice.halfHourCreditPrices[]` is the credit schedule; `location.currency` is the building's currency; `reservable.KubeId` is the booking id for `accountType` 2.
+- **`inventory-details?propertyGuid&spaceGuid&applicationType`** answered HTTP 500 (error code 624402) for an `accountType` 2 building. `reservable.KubeId` works instead, so the call is skipped when that id is present.
+- **`quote`:** request `Currency` is echoed back in `grandTotal.currency` and does not change the numbers. Response: `{ uuid, quoteStatus: 1, statusDetails: [], grandTotal: { currency, amount: 84, creditRatio: 20, symbol: "£", creditCharged: 0 }, subTotal: { amount: 70, currency }, taxes: [{ amount: 14, description: "20%", currency, name: "VAT" }], lineItems, adjustments }`. `grandTotal.amount` is the tax-inclusive total to show a cash user.
+- **`get-user-profile`:** `{ uuid, email, name, phone, homeLocation: { uuid, name, currency, timeZone, address: { city, country } }, companies: [{ uuid, name, preferredMembershipNullable: { membershipType: "On Demand", productName, accountUuid } }], registrationInfo: { country } }`. `homeLocation.currency` is the account's home currency, not the building's.
+- **`monthly-credits`** returns nothing useful for a cash account; `whoami.credits` is absent there.
