@@ -1,6 +1,7 @@
 /**
- * Deliberately naive per-IP failure throttle for the two password forms
- * (`POST /admin/login` and `POST /oauth/authorize`).
+ * Deliberately naive per-IP throttle for the unauthenticated endpoints: the two
+ * password forms (`POST /admin/login`, `POST /oauth/authorize`) and dynamic client
+ * registration (`POST /oauth/register`).
  *
  * It lives in module memory, so it is per-isolate and evaporates on eviction. That
  * is the honest trade: `ADMIN_PASSWORD` is the only thing in front of the session
@@ -22,16 +23,21 @@ const failures = new Map<string, number[]>();
 /** Caps the map so a spray of distinct source IPs cannot grow it without bound. */
 const MAX_TRACKED_KEYS = 5_000;
 
-/** Best-effort client address: Cloudflare's own header first, then `X-Forwarded-For`. */
+/** Bucket used when the request carries no `CF-Connecting-IP` (tests, direct calls). */
+export const UNKNOWN_IP = "unknown";
+
+/**
+ * The client address, from `CF-Connecting-IP` only.
+ *
+ * Cloudflare sets that header itself and overwrites whatever the client sent, so it
+ * is the one address here that cannot be chosen by the caller. `X-Forwarded-For` is
+ * deliberately *not* consulted: it is attacker-controlled, and honouring it would
+ * turn this throttle into a per-attacker-chosen-string counter, which is no throttle
+ * at all. Everything without the Cloudflare header shares {@link UNKNOWN_IP}, which
+ * is the conservative direction to be wrong in.
+ */
 export function clientIp(request: Request): string {
-  const direct = request.headers.get("CF-Connecting-IP");
-  if (direct) return direct;
-  const forwarded = request.headers.get("X-Forwarded-For");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return "unknown";
+  return request.headers.get("CF-Connecting-IP")?.trim() || UNKNOWN_IP;
 }
 
 function prune(key: string, now: number): number[] {
@@ -54,7 +60,10 @@ export function isRateLimited(bucket: string, ip: string, now: number = Date.now
   return rateLimitRetryAfter(bucket, ip, now) > 0;
 }
 
-/** Records one failed password attempt. */
+/**
+ * Records one strike against a bucket: a failed password attempt, or one accepted
+ * client registration (where the strike counts the use, not a failure).
+ */
 export function recordFailure(bucket: string, ip: string, now: number = Date.now()): void {
   const key = `${bucket}:${ip}`;
   const recent = prune(key, now);
@@ -63,7 +72,7 @@ export function recordFailure(bucket: string, ip: string, now: number = Date.now
   failures.set(key, recent);
 }
 
-/** Forgets a bucket/IP — called after a successful sign-in, and by tests. */
+/** Forgets a bucket/IP, called after a successful sign-in, and by tests. */
 export function clearFailures(bucket?: string, ip?: string): void {
   if (bucket === undefined) {
     failures.clear();

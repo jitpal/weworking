@@ -15,7 +15,7 @@ import {
   requireAdmin,
   safeNextPath,
 } from "../../src/auth/admin-session";
-import { clearFailures } from "../../src/auth/rate-limit";
+import { clearFailures, clientIp, UNKNOWN_IP } from "../../src/auth/rate-limit";
 import {
   ADMIN_PASSWORD,
   adminCookie,
@@ -41,7 +41,7 @@ async function loadLoginForm(env = fakeEnv(), next = "/admin") {
 
 async function submitLogin(
   password: string,
-  options: { env?: Env_; next?: string; ip?: string } = {},
+  options: { env?: Env_; next?: string; ip?: string; forwardedFor?: string } = {},
 ) {
   const env = options.env ?? fakeEnv();
   const form = await loadLoginForm(env, options.next ?? "/admin");
@@ -59,6 +59,7 @@ async function submitLogin(
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: cookieHeader(form.jar),
         "CF-Connecting-IP": options.ip ?? "203.0.113.7",
+        ...(options.forwardedFor ? { "X-Forwarded-For": options.forwardedFor } : {}),
       },
       body,
     },
@@ -70,6 +71,23 @@ type Env_ = ReturnType<typeof fakeEnv>;
 
 beforeEach(() => {
   clearFailures();
+});
+
+describe("clientIp", () => {
+  it("reads CF-Connecting-IP and nothing else", () => {
+    const withHeader = new Request("https://weworking.test/", {
+      headers: { "CF-Connecting-IP": "203.0.113.7", "X-Forwarded-For": "10.0.0.1" },
+    });
+    expect(clientIp(withHeader)).toBe("203.0.113.7");
+  });
+
+  it("falls back to one shared bucket rather than trusting a caller-set header", () => {
+    const spoofed = new Request("https://weworking.test/", {
+      headers: { "X-Forwarded-For": "10.0.0.1, 10.0.0.2", "X-Real-IP": "10.0.0.3" },
+    });
+    expect(clientIp(spoofed)).toBe(UNKNOWN_IP);
+    expect(clientIp(new Request("https://weworking.test/"))).toBe(UNKNOWN_IP);
+  });
 });
 
 describe("GET /admin/login", () => {
@@ -166,6 +184,16 @@ describe("POST /admin/login", () => {
     // …and a different IP is unaffected.
     const other = await submitLogin(ADMIN_PASSWORD, { ip: "198.51.100.5" });
     expect(other.status).toBe(303);
+  });
+
+  it("ignores X-Forwarded-For, which the caller chooses", async () => {
+    const ip = "198.51.100.6";
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await submitLogin("wrong-password", { ip, forwardedFor: `10.0.0.${attempt}` });
+    }
+    // A fresh X-Forwarded-For must not buy a fresh bucket.
+    const limited = await submitLogin("wrong-password", { ip, forwardedFor: "10.0.0.99" });
+    expect(limited.status).toBe(429);
   });
 
   it("answers 503 when ADMIN_PASSWORD is unset", async () => {
