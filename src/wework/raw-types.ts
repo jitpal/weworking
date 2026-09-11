@@ -19,8 +19,6 @@
  * shared contract; nothing in this file is part of that contract.
  */
 
-import type { QuotePayload } from "../core/types";
-
 /* -------------------------------------------------------------------------- */
 /* Envelope                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -92,19 +90,6 @@ export interface RawLocation {
   currency?: unknown;
 }
 
-/** `GET /wework-yardi/ondemand/get-locations-by-geo`. */
-export interface RawLocationsByGeoResponse extends RawEnvelope {
-  locationsByGeo?: unknown;
-  /** Some builds wrap the array one level deeper. */
-  locations?: unknown;
-}
-
-/** `GET /wework-yardi/location/get-city-details`. */
-export interface RawCityDetailsResponse extends RawEnvelope {
-  cityDetails?: unknown;
-  cities?: unknown;
-}
-
 /** One entry of the city list. */
 export interface RawCity {
   city?: unknown;
@@ -155,16 +140,6 @@ export interface RawWorkspace {
   type?: unknown;
   /** Live shape: `{ price: { currency, amount, symbol }, rateUnit, halfHourCreditPrices[] }`. */
   productPrice?: { price?: { currency?: unknown; amount?: unknown; symbol?: unknown } } | null;
-}
-
-/** `GET /spaces/get-spaces`. */
-export interface RawGetSpacesResponse extends RawEnvelope {
-  getSharedWorkspaces?: {
-    workspaces?: unknown;
-    totalCount?: unknown;
-  };
-  /** Defensive: some builds return the array at the top level. */
-  workspaces?: unknown;
 }
 
 /** `GET /common-booking/inventory-details`. */
@@ -347,13 +322,6 @@ export interface RawUpcomingBooking {
   timezone?: unknown;
 }
 
-/** `GET /common-booking/get-app-upcoming-bookings`. */
-export interface RawUpcomingBookingsResponse extends RawEnvelope {
-  bookings?: unknown;
-  upcomingBookings?: unknown;
-  appUpcomingBookings?: unknown;
-}
-
 /** The `mailParams` block on a cancellation. `workspaceType` 1 is a shared desk. */
 export interface CancelMailParams {
   /** Always `1` for a shared desk. */
@@ -384,28 +352,3 @@ export interface CancelRequestBody {
   reservationId: string;
   mailParams: CancelMailParams;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Local additions to the shared contract                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * `QuotePayload` plus the one field the upstream *quote* call needs and the shared
- * type does not carry.
- *
- * `SpaceID` differs between the two calls: the quote wants `inventoryUuid || uuid`,
- * while the booking wants the `accountType`-specific id, which `QuotePayload`
- * already has as `bookingSpaceId`. Rather than change `src/core/types.ts` (shared,
- * owned by the contract), this is declared here as an **optional** extra field.
- * Quote payloads are JSON before they are signed, so an extra key round-trips
- * through `signQuote`/`verifyQuote` untouched, and `WeWorkClient.quote()` falls back
- * to `bookingSpaceId` when it is absent.
- *
- * If the booking service starts populating it, nothing else has to change.
- */
-export type QuotePayloadWithQuoteSpaceId = QuotePayload & {
-  /** `inventoryUuid || uuid` for the quote call's `SpaceID`. */
-  quoteSpaceId?: string;
-  /** Workspace display name, used only for the confirmation email copy. */
-  spaceName?: string;
-};

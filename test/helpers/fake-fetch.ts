@@ -3,7 +3,7 @@
  *
  * Tests must never reach the real network: WeWork would rate-limit us, Auth0 would
  * block the datacenter IP, and the results would not be reproducible. Every module
- * that talks upstream takes `fetch` through `Deps`, so a test passes one of these
+ * that talks upstream takes `fetch` as an injected dependency, so a test passes one of these
  * instead.
  *
  * @example

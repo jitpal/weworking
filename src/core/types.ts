@@ -169,7 +169,11 @@ export interface Booking {
   credits: number;
   /** Last local wall-clock time at which this booking can still be cancelled, when known. */
   cancelDeadlineLocal?: string;
-  /** Redacted upstream body, only attached in debug paths. Never returned to agents by default. */
+  /**
+   * The upstream bookings-list item this was mapped from. `cancel_booking` rebuilds
+   * the cancel payload out of it; the booking service strips it before anything is
+   * serialised, so it never reaches an agent.
+   */
   raw?: unknown;
 }
 
@@ -353,7 +357,7 @@ export interface CancelBookingResult {
 export interface CapsConfig {
   maxBookingsPerDay: number;
   maxBookingsPerWeek: number;
-  /** `0` means unlimited. */
+  /** `0` allows only bookings that cost no credits; `-1` means no limit. */
   maxCreditsPerBooking: number;
 }
 
@@ -386,26 +390,5 @@ export interface BookingService {
   whoami(actor: Actor): Promise<WhoamiResult>;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Dependency injection                                                        */
-/* -------------------------------------------------------------------------- */
-
 /** Parsed, validated configuration. Defined in `src/env.ts`, re-exported here for convenience. */
 export type { Config };
-
-/**
- * Everything the service layer needs, injected rather than imported, so tests can
- * run with a fake `fetch`, a frozen clock and an in-memory token store.
- *
- * `session` is the raw Durable Object stub; prefer `tokenStore` for token access and
- * reach for the stub directly only for caps, idempotency and audit RPC.
- */
-export interface Deps<TSession extends Rpc.DurableObjectBranded = Rpc.DurableObjectBranded> {
-  config: Config;
-  tokenStore: TokenStore;
-  /** Injected so tests never touch the network. Always call through this, never global `fetch`. */
-  fetch: typeof fetch;
-  /** Injected clock, Unix epoch milliseconds. */
-  now(): number;
-  session: DurableObjectStub<TSession>;
-}

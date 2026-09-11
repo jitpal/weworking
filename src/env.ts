@@ -2,9 +2,9 @@
  * Worker environment: the bindings and secrets wrangler injects, and the parsed,
  * validated {@link Config} the rest of the codebase consumes.
  *
- * Rule: only this module reads `Env` fields for configuration. Everything below
- * takes a `Config` (and a `TokenStore`) through {@link ../core/types!Deps}, so it
- * can be unit-tested without a Worker environment.
+ * Rule: only this module reads `Env` fields for configuration. Everything below is
+ * handed a `Config` (and a `TokenStore`), so it can be unit-tested without a Worker
+ * environment.
  *
  * `Env` is hand-written rather than relying solely on the generated
  * `worker-configuration.d.ts`, because `wrangler types` cannot know which secrets

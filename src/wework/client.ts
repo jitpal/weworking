@@ -57,7 +57,6 @@ import type {
   BookingRequestBody,
   CancelRequestBody,
   MailData,
-  QuotePayloadWithQuoteSpaceId,
   QuoteRequestBody,
   RawBookingResponse,
   RawInventoryDetailsResponse,
@@ -458,15 +457,14 @@ export class WeWorkClient implements WeWorkApi {
    * grid, `UPSTREAM_ERROR` when upstream returns no credit ratio.
    */
   async quote(q: QuotePayload): Promise<QuoteResult> {
-    const payload = q as QuotePayloadWithQuoteSpaceId;
     // The quote call wants `inventoryUuid || uuid`, which is not always the same id
     // the booking call wants. `quoteSpaceId` carries it when the caller knows it.
-    const spaceId = payload.quoteSpaceId ?? q.bookingSpaceId;
+    const spaceId = q.quoteSpaceId ?? q.bookingSpaceId;
     const body = (await this.#call({
       method: "POST",
       path: "/common-booking/quote",
       label: "quote",
-      body: buildQuoteBody(payload, spaceId),
+      body: buildQuoteBody(q, spaceId),
     })) as RawQuoteResponse | null;
 
     // Credit accounts get a creditRatio; pay-as-you-go accounts may not. The
@@ -497,12 +495,11 @@ export class WeWorkClient implements WeWorkApi {
    * `VALIDATION` for off-grid times.
    */
   async book(q: QuotePayload, creditRatio: number): Promise<BookResult> {
-    const payload = q as QuotePayloadWithQuoteSpaceId;
     const body = (await this.#call({
       method: "POST",
       path: "/common-booking/",
       label: "book",
-      body: buildBookingBody(payload, creditRatio),
+      body: buildBookingBody(q, creditRatio),
     })) as RawBookingResponse | null;
 
     const status = str(body?.BookingStatus) ?? "";
@@ -843,7 +840,7 @@ export class WeWorkClient implements WeWorkApi {
  *
  * @throws {AppError} `VALIDATION` when either time is off the 30-minute grid.
  */
-export function buildQuoteBody(q: QuotePayloadWithQuoteSpaceId, spaceId: string): QuoteRequestBody {
+export function buildQuoteBody(q: QuotePayload, spaceId: string): QuoteRequestBody {
   const startUtc = normaliseUtcStamp(q.startUtc);
   const endUtc = normaliseUtcStamp(q.endUtc);
   if (!startUtc || !endUtc) {
@@ -877,10 +874,7 @@ export function buildQuoteBody(q: QuotePayloadWithQuoteSpaceId, spaceId: string)
 }
 
 /** The booking body: the quote body plus the three fields only booking carries. */
-export function buildBookingBody(
-  q: QuotePayloadWithQuoteSpaceId,
-  creditRatio: number,
-): BookingRequestBody {
+export function buildBookingBody(q: QuotePayload, creditRatio: number): BookingRequestBody {
   return {
     ...buildQuoteBody(q, q.bookingSpaceId),
     ApplicationType: "WorkplaceOne",
@@ -893,11 +887,7 @@ export function buildBookingBody(
  * Confirmation-email copy, in the shape the members web app sends (verified from
  * dvcrn/wework-cli). Every value is a string; times are location-local.
  */
-export function buildMailData(
-  q: QuotePayloadWithQuoteSpaceId,
-  startUtc: string,
-  endUtc: string,
-): MailData {
+export function buildMailData(q: QuotePayload, startUtc: string, endUtc: string): MailData {
   const tz = q.timezone || "UTC";
   const startWall = utcIsoToZonedWallClock(startUtc, tz, q.tzOffset);
   const endWall = utcIsoToZonedWallClock(endUtc, tz, q.tzOffset);
