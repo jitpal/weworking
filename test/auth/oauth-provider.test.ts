@@ -14,9 +14,15 @@
 
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resolveActor } from "../../src/auth/guard";
-import { createOAuthProvider, landingRoutes, oauthRoutes } from "../../src/auth/oauth";
+import {
+  CLIENT_REGISTRATION_TTL_SECONDS,
+  createOAuthProvider,
+  landingRoutes,
+  oauthRoutes,
+} from "../../src/auth/oauth";
+import { clearFailures, MAX_FAILURES } from "../../src/auth/rate-limit";
 import { generateApiKey } from "../../src/auth/tokens";
 import type { Env } from "../../src/env";
 import { getSessionStub } from "../../src/session/do";
@@ -82,6 +88,70 @@ async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
   return { verifier, challenge: base64Url(new Uint8Array(digest)) };
 }
+
+/** One dynamic client registration, optionally from a named source address. */
+async function register(
+  workerEnv: Env,
+  options: { ip?: string; name?: string } = {},
+): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (options.ip) headers["CF-Connecting-IP"] = options.ip;
+  return fetchThroughProvider(
+    new Request(`${BASE}/oauth/register`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        client_name: options.name ?? "Integration Client",
+        redirect_uris: [REDIRECT_URI],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+      }),
+    }),
+    workerEnv,
+  );
+}
+
+beforeEach(() => {
+  clearFailures();
+});
+
+describe("dynamic client registration", () => {
+  it("stores a registered client with an expiry rather than for ever", async () => {
+    const workerEnv = await testEnv();
+    const response = await register(workerEnv, { ip: "203.0.113.20" });
+    expect(response.status).toBe(201);
+    const { client_id: clientId } = (await response.json()) as { client_id: string };
+
+    const listed = await workerEnv.OAUTH_KV.list({ prefix: `client:${clientId}` });
+    const stored = listed.keys[0];
+    expect(stored).toBeDefined();
+    // A TTL is the point: an unauthenticated write must not be a permanent one.
+    const expiration = stored?.expiration ?? 0;
+    const now = Math.floor(Date.now() / 1000);
+    expect(expiration).toBeGreaterThan(now);
+    expect(expiration).toBeLessThanOrEqual(now + CLIENT_REGISTRATION_TTL_SECONDS + 5);
+  });
+
+  it("throttles a source that registers over and over", async () => {
+    const workerEnv = await testEnv();
+    const ip = "203.0.113.21";
+    for (let attempt = 0; attempt < MAX_FAILURES; attempt += 1) {
+      const allowed = await register(workerEnv, { ip, name: `client-${attempt}` });
+      expect(allowed.status).toBe(201);
+    }
+
+    const refused = await register(workerEnv, { ip, name: "one-too-many" });
+    expect(refused.status).toBe(429);
+    const body = (await refused.json()) as { error: string; error_description?: string };
+    expect(body.error).toBe("access_denied");
+    expect(body.error_description).toContain("Too many client registrations");
+
+    // Another source is unaffected: the bucket is per address.
+    const other = await register(workerEnv, { ip: "203.0.113.22", name: "elsewhere" });
+    expect(other.status).toBe(201);
+  });
+});
 
 describe("workers-oauth-provider integration", () => {
   it("serves the protected-resource metadata the 401 challenge advertises", async () => {

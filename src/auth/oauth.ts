@@ -7,7 +7,7 @@
  * prefixes (`/mcp`, `/api/`), and forwards everything else — including the
  * authorization page below — to our app.
  *
- * Two deliberate decisions live here:
+ * Three deliberate decisions live here:
  *
  * 1. **`resolveExternalToken` is wired.** It is the library's seam for a non-OAuth
  *    credential on a protected route, and using it means an API key reaches `/mcp`
@@ -17,7 +17,11 @@
  *    challenge MCP clients need. `src/auth/guard.ts#resolveActor` still works on a
  *    raw header, so middleware outside the provider (or a test) resolves the same
  *    `Actor`.
- * 2. **The approval screen is the operator's own sign-in, not an identity provider.**
+ * 2. **Dynamic client registration is bounded, not closed.** MCP clients register
+ *    themselves, so the endpoint has to stay open; what it must not be is an
+ *    unauthenticated write to permanent storage. Registrations expire after
+ *    {@link CLIENT_REGISTRATION_TTL_SECONDS} and are rate limited per client IP.
+ * 3. **The approval screen is the operator's own sign-in, not an identity provider.**
  *    There is one user — the operator — so `userId` is always `"admin"`. A browser
  *    already carrying the `ww_admin` cookie only has to press Approve; one without it
  *    is asked for `ADMIN_PASSWORD`, rate-limited, and is signed in on success, so the
@@ -53,6 +57,7 @@ import {
   verifyCsrfToken,
 } from "./admin-session";
 import { matchApiKey } from "./guard";
+import { clientIp, isRateLimited, recordFailure } from "./rate-limit";
 import { base64UrlDecode, base64UrlEncode, signValue, verifyValue } from "./sign";
 import { DEFAULT_ACCOUNT_ID, SCOPES } from "./tokens";
 
@@ -70,6 +75,18 @@ export const SCOPES_SUPPORTED: Scope[] = [...SCOPES];
 export const DEFAULT_SCOPES: Scope[] = ["read", "write"];
 /** Rate-limit bucket for the approval form. */
 export const OAUTH_APPROVE_BUCKET = "oauth-authorize";
+/** Rate-limit bucket for dynamic client registration. */
+export const OAUTH_REGISTER_BUCKET = "oauth-register";
+/**
+ * How long a dynamically registered client lives in `OAUTH_KV`.
+ *
+ * The library's default is 90 days and `undefined` means "never expires", which is
+ * the wrong default for an endpoint anyone on the internet may call: without a TTL
+ * every registration is a permanent KV entry. Thirty days is far longer than the
+ * few minutes a real client needs between registering and completing its first
+ * authorization, and a client that is still in use re-registers.
+ */
+export const CLIENT_REGISTRATION_TTL_SECONDS = 30 * 24 * 60 * 60;
 /** Purpose string binding a CSRF token to this form. */
 const CSRF_PURPOSE = "oauth-authorize";
 /** How long a rendered approval form stays valid. */
@@ -118,6 +135,25 @@ export function createOAuthProvider(options: CreateOAuthProviderOptions): OAuthP
     authorizeEndpoint: AUTHORIZE_ENDPOINT,
     tokenEndpoint: TOKEN_ENDPOINT,
     clientRegistrationEndpoint: REGISTRATION_ENDPOINT,
+    clientRegistrationTTL: CLIENT_REGISTRATION_TTL_SECONDS,
+    /**
+     * Dynamic client registration is unauthenticated by MCP's design, so the only
+     * thing bounding it is arrival rate. Same in-memory bucket as the password
+     * forms: per-isolate and modest, but enough that one source cannot sit there
+     * filling the namespace. Returning an object rejects the registration.
+     */
+    clientRegistrationCallback: ({ request }) => {
+      const ip = clientIp(request);
+      if (isRateLimited(OAUTH_REGISTER_BUCKET, ip)) {
+        return {
+          code: "access_denied",
+          description: "Too many client registrations from this address. Try again later.",
+          status: 429,
+        };
+      }
+      recordFailure(OAUTH_REGISTER_BUCKET, ip);
+      return undefined;
+    },
     scopesSupported: SCOPES_SUPPORTED,
     clientIdMetadataDocumentEnabled: options.clientIdMetadataDocumentEnabled ?? true,
     resourceMetadata: {
