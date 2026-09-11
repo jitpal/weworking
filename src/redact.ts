@@ -5,14 +5,33 @@
  * or a tool result without passing through here first. Upstream WeWork/Auth0
  * bodies routinely carry `access_token`, `refresh_token`, `id_token` and
  * `Set-Cookie`, and Workers logs are readable in the dashboard and `wrangler tail`.
+ *
+ * Two filters, because one is not enough. Key names catch the credential fields,
+ * which is most of them; a value-level rule catches email addresses wherever they
+ * turn up, including inside free text a key name says nothing about.
  */
 
 /**
  * Keys whose values are replaced wholesale. Matched case-insensitively against the
  * key name, as a substring — so `accessToken`, `x-refresh-token` and
  * `Authorization` all match.
+ *
+ * `weworkauth` is listed separately because WeWork's own header is spelled that way
+ * and `authorization` does not cover it. `email` is here because a member's address
+ * is personal data, and it is the one field that ties this deployment's activity to
+ * a named human.
  */
-const SENSITIVE_KEY = /token|password|secret|authorization|cookie|refresh/i;
+const SENSITIVE_KEY = /token|password|secret|authorization|weworkauth|cookie|refresh|email/i;
+
+/**
+ * An email address anywhere inside a string value.
+ *
+ * A key-name filter cannot catch `{ note: "book it for ada@example.com" }`, and
+ * upstream error envelopes put the member's address in free text. Deliberately
+ * loose: over-matching costs a log line some detail, under-matching costs a user
+ * their privacy.
+ */
+const EMAIL_VALUE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
 
 /** What a redacted value is replaced with. Deliberately not the empty string, so it is visible in logs. */
 export const REDACTED = "[redacted]";
@@ -22,14 +41,15 @@ const MAX_DEPTH = 12;
 
 /**
  * Deep-copies `value`, replacing any property whose key looks sensitive with
- * {@link REDACTED}. Arrays, plain objects, `Map`, `Set`, `Headers` and `Error`
- * are handled; everything else is returned as-is.
+ * {@link REDACTED}, and masking any email address found inside a string. Arrays,
+ * plain objects, `Map`, `Set`, `Headers` and `Error` are handled; everything else is
+ * returned as-is.
  *
  * Cycles are broken with `"[circular]"`. The input is never mutated.
  *
  * @example
- * redact({ user: "ada", access_token: "ey..." });
- * // => { user: "ada", access_token: "[redacted]" }
+ * redact({ user: "ada", access_token: "ey...", note: "ask ada@example.com" });
+ * // => { user: "ada", access_token: "[redacted]", note: "ask [redacted]" }
  */
 export function redact<T>(value: T): unknown {
   return walk(value, 0, new WeakSet());
@@ -38,6 +58,11 @@ export function redact<T>(value: T): unknown {
 /** True when a property name should have its value replaced. */
 export function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY.test(key);
+}
+
+/** Replaces every email address inside `value` with {@link REDACTED}. */
+export function maskEmails(value: string): string {
+  return value.replace(EMAIL_VALUE, REDACTED);
 }
 
 /**
@@ -51,7 +76,7 @@ export function redactHeaders(headers: Headers | Record<string, string>): Record
       ? [...headers.entries()]
       : Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v] as [string, string]);
   for (const [name, raw] of entries) {
-    out[name] = isSensitiveKey(name) ? REDACTED : raw;
+    out[name] = isSensitiveKey(name) ? REDACTED : maskEmails(raw);
   }
   return out;
 }
@@ -67,15 +92,18 @@ export function redactUrl(url: string | URL): string {
   } catch {
     return REDACTED;
   }
-  for (const key of [...parsed.searchParams.keys()]) {
+  for (const [key, value] of [...parsed.searchParams.entries()]) {
     if (isSensitiveKey(key) || key === "code" || key === "login_ticket" || key === "state") {
       parsed.searchParams.set(key, REDACTED);
+    } else {
+      parsed.searchParams.set(key, maskEmails(value));
     }
   }
   return parsed.toString();
 }
 
 function walk(value: unknown, depth: number, seen: WeakSet<object>): unknown {
+  if (typeof value === "string") return maskEmails(value);
   if (value === null || typeof value !== "object") return value;
   if (depth >= MAX_DEPTH) return "[truncated]";
   if (seen.has(value)) return "[circular]";
@@ -84,7 +112,7 @@ function walk(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   if (value instanceof Headers) return redactHeaders(value);
   if (Array.isArray(value)) return value.map((item) => walk(item, depth + 1, seen));
   if (value instanceof Error) {
-    return { name: value.name, message: value.message };
+    return { name: value.name, message: maskEmails(value.message) };
   }
   if (value instanceof Map) {
     const out: Record<string, unknown> = {};
