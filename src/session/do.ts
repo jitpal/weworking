@@ -287,8 +287,8 @@ export class WeWorkSession extends DurableObject<Env> {
    * service checks the same limits first, so an agent gets a useful error, but a
    * booking is only ever reserved here.
    *
-   * Dry-run rows are written with `dry_run = 1` and never count towards a cap, but
-   * the caps are still evaluated so a dry run reports what a real booking would do.
+   * A dry run is evaluated against every cap, so it reports exactly what a real
+   * booking would do, and then writes nothing: no ledger row, no slot taken.
    *
    * Call {@link WeWorkSession.confirmBooking} on success or
    * {@link WeWorkSession.releaseBooking} when the upstream call fails; an
@@ -344,18 +344,23 @@ export class WeWorkSession extends DurableObject<Env> {
       };
     }
 
-    this.#sql.exec(
-      `INSERT OR REPLACE INTO bookings_ledger
-         (booking_key, booking_id, date, iso_week, credits, status, created_at, confirmed_at, actor, dry_run)
-       VALUES (?, NULL, ?, ?, ?, 'reserved', ?, NULL, ?, ?)`,
-      bookingKey,
-      date,
-      isoWeekKey(date),
-      credits,
-      now,
-      args.actor,
-      args.dryRun ? 1 : 0,
-    );
+    // A dry run books nothing, so it reserves nothing: no ledger row is written.
+    // The row would never have counted towards a cap anyway, and writing one made a
+    // `write` credential able to grow this object for free, one row per unique
+    // idempotency key. The audit log still records the attempt.
+    if (!args.dryRun) {
+      this.#sql.exec(
+        `INSERT OR REPLACE INTO bookings_ledger
+           (booking_key, booking_id, date, iso_week, credits, status, created_at, confirmed_at, actor, dry_run)
+         VALUES (?, NULL, ?, ?, ?, 'reserved', ?, NULL, ?, 0)`,
+        bookingKey,
+        date,
+        isoWeekKey(date),
+        credits,
+        now,
+        args.actor,
+      );
+    }
 
     // A real reservation consumes a slot; report what is left *after* it.
     const after = args.dryRun ? counts : { day: counts.day + 1, week: counts.week + 1 };

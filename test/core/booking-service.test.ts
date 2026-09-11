@@ -546,6 +546,7 @@ describe("createBooking", () => {
     expect(harness.api.calls.filter((c) => c.method === "book")).toHaveLength(0);
     expect(harness.session.released).toEqual(["book:k"]);
     expect(harness.session.usedToday()).toBe(0);
+    expect(harness.session.reserved.size).toBe(0);
     expect(harness.session.audits).toContainEqual({
       tool: "create_booking",
       outcome: "error",

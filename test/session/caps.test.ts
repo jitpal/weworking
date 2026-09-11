@@ -255,16 +255,14 @@ describe("reserveBooking — cash cap", () => {
 });
 
 describe("reserveBooking — dry runs", () => {
-  it("records dry runs but never counts them towards a cap", async () => {
+  it("writes nothing for a dry run, and never counts it towards a cap", async () => {
     const stub = freshSession("caps-dry-run");
     await expect(
       stub.reserveBooking({ bookingKey: "dry-1", date: MON, credits: 3, actor: "a", dryRun: true }),
     ).resolves.toEqual({ ok: true, capsRemaining: { day: 1, week: 5 } });
 
-    // The row exists…
-    await expect(
-      queryCount(stub, "SELECT COUNT(*) AS n FROM bookings_ledger WHERE dry_run = 1"),
-    ).resolves.toBe(1);
+    // No ledger row: a dry run reserves nothing, so there is nothing to store…
+    await expect(queryCount(stub, "SELECT COUNT(*) AS n FROM bookings_ledger")).resolves.toBe(0);
     // …and a real booking on the same day is still allowed.
     await expect(
       stub.reserveBooking({
@@ -275,6 +273,20 @@ describe("reserveBooking — dry runs", () => {
         dryRun: false,
       }),
     ).resolves.toEqual({ ok: true, capsRemaining: { day: 0, week: 4 } });
+  });
+
+  it("cannot be repeated to grow the ledger", async () => {
+    const stub = freshSession("caps-dry-run-repeat");
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      await stub.reserveBooking({
+        bookingKey: `dry-${attempt}`,
+        date: MON,
+        credits: 0,
+        actor: "a",
+        dryRun: true,
+      });
+    }
+    await expect(queryCount(stub, "SELECT COUNT(*) AS n FROM bookings_ledger")).resolves.toBe(0);
   });
 
   it("still reports CAP_EXCEEDED for a dry run that would not fit", async () => {

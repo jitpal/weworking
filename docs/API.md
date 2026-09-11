@@ -213,7 +213,7 @@ Exactly one of `location_id`, `city`, or `lat`+`lng` is required. `limit` is app
 }
 ```
 
-With `dry_run: true`, `dryRun` is `true`, `creditsCharged` is what *would* be charged, `booking.status` is `pending`, and `bookingId` is a placeholder. Nothing is sent to WeWork's booking endpoint and no cap is consumed.
+With `dry_run: true`, `dryRun` is `true`, `creditsCharged` is what *would* be charged, `booking.status` is `pending`, and `bookingId` is a placeholder. Nothing is sent to WeWork's booking endpoint, no cap is consumed and no booking is recorded; the attempt still appears in the audit log. Every cap is still evaluated, so a dry run that answers `CAP_EXCEEDED` means a real booking would too.
 
 WeWork returns HTTP 200 even when it refuses a booking, so the service checks the upstream `BookingStatus` and raises `BOOKING_REFUSED` when it is not `BookingSuccess`. A `BOOKING_REFUSED` means nothing was charged.
 
