@@ -1,144 +1,241 @@
 # Design
 
 How weworking is put together, and why. This is the architecture document: if you are
-deploying rather than modifying, start with [SELF_HOSTING.md](./SELF_HOSTING.md) instead.
+deploying rather than modifying, start with [SELF_HOSTING.md](./SELF_HOSTING.md).
 
 Open source (MIT). Unofficial; the authors are unaffiliated with WeWork. Self-hostable:
 one deployment per WeWork account.
 
-## 0. Goal
-A Cloudflare Worker exposing WeWork hot-desk search/booking to AI agents via (a) a remote MCP server (Streamable HTTP, stateless) and (b) a REST API with OpenAPI, protected by OAuth 2.1 (workers-oauth-provider) AND static scoped bearer tokens. WeWork session tokens live in one SQLite Durable Object. Phase 1 = hot desks only; schemas carry `space_type` for future rooms.
+## 1. Goal
 
-## 1. Stack (pinned)
-- TypeScript strict, ESM. Node 22 for tooling. npm (package-lock committed).
-- wrangler 4.131.x, `wrangler.jsonc`, `compatibility_date: "2026-08-04"`, `compatibility_flags: ["nodejs_compat"]`.
-- hono ^4.13 (router). zod ^4.
-- MCP: `agents@0.23.x` -> `import { createMcpHandler } from "agents/mcp/server"` + `@modelcontextprotocol/server@2.0.0` (`McpServer`, `registerTool`). New McpServer instance per request (factory). The fallback, if `agents` ever becomes unusable, is the `WebStandardStreamableHTTPServerTransport` exported by `@modelcontextprotocol/server`, mounted in Hono. See [DEPENDENCY_NOTES.md](./DEPENDENCY_NOTES.md) for the exact signatures in use.
-- OAuth: `@cloudflare/workers-oauth-provider@0.10.x` (needs KV binding `OAUTH_KV`).
-- Tests: vitest ^4.1 + `@cloudflare/vitest-pool-workers@0.22.x` (`cloudflareTest` plugin in vitest.config.ts pointing at wrangler.jsonc). Never hit real network in tests. Fixtures under `test/fixtures/`.
-- Lint/format: `@biomejs/biome` 2.x (`biome.jsonc`). `npm run check` = biome check + tsc --noEmit + vitest run.
-- Types: `wrangler types` -> `worker-configuration.d.ts` (generated, committed).
+A Cloudflare Worker exposing WeWork hot-desk search and booking to AI agents twice
+over: as a remote MCP server (Streamable HTTP, stateless, at `/mcp`) and as a REST API
+with OpenAPI (`/api/*`). Both front doors take the same two credentials, an OAuth 2.1
+access token issued by this worker or an API key the operator minted at `/admin/keys`.
+WeWork session tokens live in one SQLite Durable Object and never leave it.
 
-## 2. Bindings / secrets / vars (wrangler.jsonc)
-Bindings:
-- `SESSION` Durable Object class `WeWorkSession` (migration `new_sqlite_classes`).
-- `OAUTH_KV` KV namespace (workers-oauth-provider). id placeholder `"REPLACE_ME"`; docs tell self-hoster to create.
-- Cron trigger `"17 5 * * *"` (daily refresh + prune).
-Secrets (`wrangler secret put`, `.dev.vars` locally; `.dev.vars.example` committed):
-- `WEWORK_USERNAME`, `WEWORK_PASSWORD` (optional if user only uses connect page)
-- `ADMIN_PASSWORD` (gates OAuth approve screen + /admin/*)
-- (superseded) `AUTH_TOKENS` static tokens. API keys are minted at `/admin/keys` and stored hashed in the Durable Object instead; there is no token secret.
-- `QUOTE_SIGNING_KEY` (32+ random bytes hex)
-- `COOKIE_SIGNING_KEY` (admin session cookie)
-Vars (plain, in wrangler.jsonc `vars`, overridable):
-- `WRITE_ENABLED="true"`, `MAX_BOOKINGS_PER_DAY="1"`, `MAX_BOOKINGS_PER_WEEK="7"`, `MAX_CREDITS_PER_BOOKING="0"` (0 = free desks only, "unlimited" = no cap), `LOGIN_STRATEGY="auto"` (auto|headless|manual), `PUBLIC_BASE_URL=""` (optional override for OAuth issuer/urls).
+Phase 1 books hot desks only. Every schema already carries `space_type`, so meeting
+rooms and private offices can land without a new schema version; see
+[CAPTURE_GUIDE.md](./CAPTURE_GUIDE.md).
 
-## 3. Repo layout
+## 2. Stack
+
+- TypeScript strict, ESM. Node 22 for tooling. npm, lockfile committed.
+- wrangler 4.131.x, `wrangler.jsonc`, `compatibility_date: "2026-08-04"`,
+  `compatibility_flags: ["nodejs_compat", "global_fetch_strictly_public"]`.
+- hono ^4.13 (router), zod ^4 (schemas, and `z.toJSONSchema` for the OpenAPI document).
+- MCP: `createMcpHandler` from `agents@0.23`'s `agents/mcp/server`, wrapping
+  `McpServer` from `@modelcontextprotocol/server@2.0.0`. A fresh `McpServer` per
+  request, built by a factory.
+- OAuth: `@cloudflare/workers-oauth-provider@0.10.x`, which needs the `OAUTH_KV`
+  binding.
+- Tests: vitest ^4.1 with `@cloudflare/vitest-pool-workers@0.22.x` (the `cloudflareTest`
+  plugin in `vitest.config.ts`, pointed at `wrangler.jsonc`). Tests never reach the real
+  network; upstream responses come from `test/fixtures/`.
+- Lint and format: `@biomejs/biome` 2.x. `npm run check` is biome + `tsc --noEmit` +
+  `vitest run`.
+- Binding types: `wrangler types` writes `worker-configuration.d.ts`, which is committed.
+
+Exact exported signatures for the pinned libraries are in
+[DEPENDENCY_NOTES.md](./DEPENDENCY_NOTES.md).
+
+## 3. Bindings, secrets and vars
+
+Bindings (`wrangler.jsonc`):
+
+- `SESSION`, Durable Object class `WeWorkSession`, created by the `new_sqlite_classes`
+  migration `v1`.
+- `OAUTH_KV`, KV namespace for the OAuth provider's clients, grants and tokens. The
+  committed config carries a placeholder id; the self-hoster creates their own.
+- Cron trigger `"17 5 * * *"`, daily refresh and prune.
+- `OAUTH_PROVIDER` is injected at request time by the provider. It is declared on `Env`
+  and has no entry in `wrangler.jsonc`.
+
+Secrets (`wrangler secret put`, or `.dev.vars` locally; `.dev.vars.example` is committed):
+
+- `ADMIN_PASSWORD`, required. Gates `/admin/*` and the OAuth approval screen.
+- `QUOTE_SIGNING_KEY`, required. 32+ random bytes, hex.
+- `COOKIE_SIGNING_KEY`, required. 32+ random bytes, hex.
+- `WEWORK_USERNAME`, `WEWORK_PASSWORD`, optional. Only headless login needs them.
+
+There is no secret for agent credentials. API keys are minted at `/admin/keys` and only
+their SHA-256 is stored, in the Durable Object.
+
+Vars (plain values in `wrangler.jsonc`, parsed and validated by `src/env.ts#parseConfig`):
+`WRITE_ENABLED="true"`, `MAX_BOOKINGS_PER_DAY="1"`, `MAX_BOOKINGS_PER_WEEK="7"`,
+`MAX_CREDITS_PER_BOOKING="0"` (`0` allows only bookings that cost no credits,
+`"unlimited"` removes the cap), `LOGIN_STRATEGY="auto"` (`auto` | `headless` | `manual`),
+`PUBLIC_BASE_URL=""`.
+
+The quote lifetime is not configurable. It is the `QUOTE_TTL_SECONDS` constant in
+`src/core/booking-service.ts`, ten minutes.
+
+## 4. Repo layout
+
 ```
 README.md LICENSE CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md
-package.json package-lock.json tsconfig.json vitest.config.ts biome.jsonc wrangler.jsonc worker-configuration.d.ts
-.gitignore .dev.vars.example .editorconfig
-.github/workflows/ci.yml  .github/workflows/deploy.yml
-docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md WEWORK_API.md THREAT_MODEL.md CAPTURE_GUIDE.md
+package.json tsconfig.json vitest.config.ts biome.jsonc wrangler.jsonc worker-configuration.d.ts
+.gitignore .dev.vars.example .editorconfig .nvmrc
+.github/workflows/ci.yml  .github/dependabot.yml  .github/ISSUE_TEMPLATE/
+docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md LOCATION_AND_TIME.md
+      WEWORK_API.md THREAT_MODEL.md CAPTURE_GUIDE.md DEPENDENCY_NOTES.md
 plugin/ plugin.json mcp.json skills/book-a-desk/SKILL.md
-scripts/ record-fixture.mjs (manual, live, redacts)
+scripts/ record-fixture.mjs (manual, live, redacts)  wrangler.mjs (config picker)
 src/
-  index.ts                 # composes everything; exports default fetch + scheduled + DO class
-  env.ts                   # Env type + config parsing (vars -> typed Config)
-  errors.ts                # AppError { code, message, hint, status } + codes enum
-  redact.ts                # redact(obj) for logging; redactHeaders
+  index.ts                 # composes everything; default fetch + scheduled, exports the DO class
+  env.ts                   # Env bindings + parseConfig(): vars -> typed Config
+  errors.ts                # AppError { code, message, hint, status } + the code taxonomy
+  redact.ts                # redact(), redactHeaders(), redactUrl() for logging
   core/
-    types.ts               # DOMAIN TYPES (see §4), shared contract
-    quote.ts               # signQuote/verifyQuote (HMAC-SHA-256 via WebCrypto, base64url)
-    booking-service.ts     # orchestrates: search -> quotes; book(quote) -> caps/idempotency/audit -> client
-    time.ts                # local<->UTC helpers, 30-min rounding, IANA tz via Intl
+    types.ts               # domain types, the shared contract (see §5)
+    quote.ts               # signQuote / verifyQuote (HMAC-SHA-256, base64url)
+    booking-service.ts     # search -> quotes; book(quote) -> caps, idempotency, audit, upstream
+    time.ts                # local <-> UTC, 30-minute rounding, IANA zones via Intl
   wework/
-    client.ts              # WeWorkClient class: all members.wework.com calls; takes a TokenProvider
-    auth/
-      config.ts            # fetch auth0/v2/config (discovery)
-      headless-login.ts    # Strategy A: full Auth0 PKCE flow with manual redirects/cookies
-      refresh.ts           # refresh_token grant
-      cookie-jar.ts        # minimal domain/path-aware jar
-      pkce.ts
+    client.ts              # WeWorkClient: every members.wework.com call
+    headers.ts             # the header block upstream expects
     mappers.ts             # raw JSON -> domain types
-    headers.ts             # header block builder
-    raw-types.ts           # raw upstream shapes (only what we read)
+    raw-types.ts           # raw upstream shapes, only the fields we read
+    auth/
+      index.ts             # the barrel the session DO imports
+      config.ts            # auth0/v2/config discovery
+      headless-login.ts    # full Auth0 PKCE flow with manual redirects and cookies
+      token-exchange.ts    # the /oauth/token wrapper
+      refresh.ts           # refresh_token grant
+      manual.ts            # parses a pasted session (SPA cache, JSON, or bare token)
+      cookie-jar.ts pkce.ts
   session/
-    do.ts                  # WeWorkSession Durable Object (SQLite): token, idempotency, caps, audit
-    token-store.ts         # TokenStore interface + DO-backed impl used by worker side
-    cron.ts                # scheduled(): refresh if expiring < 6h, prune
+    do.ts                  # WeWorkSession Durable Object (SQLite)
+    token-store.ts         # TokenStore: DO-backed and in-memory implementations
+    cron.ts                # scheduled(): refresh if expiring, prune
   auth/
-    guard.ts               # resolves Actor from request: OAuth token (via provider props) or API key
-    tokens.ts              # API key minting, sha256 and constant-time compare
-    oauth.ts               # OAuthProvider wiring: authorize page (admin password), token endpoints
-    admin-session.ts       # signed cookie for /admin pages
+    guard.ts               # Actor resolution, requireScope, the 401 challenge
+    tokens.ts              # API key minting, SHA-256, constant-time compare
+    oauth.ts               # OAuthProvider wiring + the approval page
+    admin-session.ts       # signed admin cookie, login form, CSRF
+    sign.ts rate-limit.ts
   mcp/
-    server.ts              # createServer(actor, deps) -> McpServer with tools; instructions text w/ disclaimer
-    tools.ts               # tool definitions (zod schemas) mapping to booking-service
+    server.ts              # mountMcp(): the /mcp route, instructions text, host checks
+    tools.ts               # tool registration and annotations
+    schemas.ts             # zod request/response schemas, shared with REST and OpenAPI
+    operations.ts          # the six operations, called by both front doors
   http/
-    api.ts                 # Hono routes /api/*
-    openapi.ts             # hand-written OpenAPI 3.1 JSON from the same zod schemas (zod v4 toJSONSchema)
-    admin.ts               # /admin/connect page + POST /admin/session + GET /admin/audit + /admin/status
-    health.ts              # GET /healthz (no secrets; presence booleans, session age)
+    api.ts                 # REST routes /api/*
+    openapi.ts             # OpenAPI 3.1 from the same zod schemas, plus /api/docs
+    admin.ts               # /admin pages: status, connect, keys, audit
+    admin-html.ts          # the shared page shell and escaping
+    health.ts              # GET /healthz
 test/
-  fixtures/wework/*.json   # scrubbed upstream responses
+  fixtures/wework/*.json   # synthetic upstream bodies
   helpers/fake-fetch.ts    # route-table fetch stub
-  *.test.ts
+  **/*.test.ts
 ```
 
-## 4. Domain types (src/core/types.ts), authoritative names
-```ts
-export type Scope = "read" | "write" | "admin";
-export interface Actor { kind: "oauth" | "bearer" | "admin"; name: string; scopes: Scope[]; accountId: string; } // accountId "default" in phase 1
-export type SpaceType = "desk" | "meeting_room" | "private_office"; // phase 1 only "desk" implemented
+## 5. Domain types
 
-export interface Location { locationId: string; name: string; address: string; city: string; country: string; timezone: string; latitude?: number; longitude?: number; distanceKm?: number; accountType: number; timezoneOffset: string; openTime?: string; closeTime?: string; }
-export interface SpaceAvailability { spaceId: string; inventoryUuid?: string; kubeId?: string; spaceName: string; spaceType: SpaceType; capacity: number; seatsAvailable: number; seatsTotal: number; credits: number; cashPrice?: { amount: number; currency: string }; location: Location; date: string; startLocal: string; endLocal: string; startUtc: string; endUtc: string; timezone: string; }
-export interface QuotePayload { v: 1; accountId: string; locationId: string; spaceId: string; wwSpaceId: string; bookingSpaceId: string; accountType: number; date: string; startUtc: string; endUtc: string; credits: number; timezone: string; tzOffset: string; locationName: string; address: string; city: string; country: string; state?: string; exp: number; }
-export interface Booking { bookingId: string; reservationId?: string; locationId: string; locationName: string; address?: string; date: string; startLocal: string; endLocal: string; timezone: string; status: "confirmed" | "cancelled" | "pending" | "unknown"; credits: number; cancelDeadlineLocal?: string; raw?: unknown; }
-export interface Credits { remaining: number; total: number; periodStart: string; periodEnd: string; }
-export interface Profile { userId: string; email?: string; name?: string; membershipType?: string; homeLocationId?: string; }
-export interface SessionInfo { state: "none" | "valid" | "expiring" | "expired"; source: "login" | "manual" | "refresh" | "none"; obtainedAt?: string; expiresAt?: string; hasRefreshToken: boolean; lastError?: string; }
+`src/core/types.ts` is authoritative and documented inline; it is not duplicated here,
+because a copy drifts. The names it defines are `Scope`, `Actor`, `SpaceType`,
+`Location`, `SpaceAvailability`, `QuotePayload`, `Booking`, `Credits`, `Profile`,
+`SessionInfo`, `SessionRecord`, `TokenStore`, `LoginStrategy`, the argument and result
+shapes for each operation, and the `BookingService` interface itself.
 
-export interface SessionRecord { accessToken: string; refreshToken?: string; expiresAt: number; obtainedAt: number; source: "login" | "manual" | "refresh"; userUuid: string; }
-export interface TokenStore { getAccessToken(opts?: { forceRefresh?: boolean }): Promise<{ accessToken: string; userUuid: string }>; getSessionInfo(): Promise<SessionInfo>; setSession(rec: Omit<SessionRecord,"obtainedAt">): Promise<void>; clear(): Promise<void>; }
-export interface LoginStrategy { name: "headless" | "manual"; login(): Promise<SessionRecord>; }
+Two rules hold for the whole file: response fields are `camelCase` and are serialised
+straight out as MCP `structuredContent` and as REST JSON bodies, so renaming one is a
+breaking API change; and request parameters are `snake_case` everywhere, whether they
+arrive as a tool argument, a JSON body or a query string.
+
+`src/core/booking-service.ts` adds `SearchArgs` (`SearchAvailabilityArgs` plus `limit`)
+and `WhoamiResultWithCaps` (`WhoamiResult` plus `capsRemaining`), both additive.
+
+Error codes live in `src/errors.ts` and are listed with their meanings in
+[API.md](./API.md). Every one carries a `hint` written for an agent.
+
+## 6. WeWork upstream
+
+[WEWORK_API.md](./WEWORK_API.md) has the endpoint-level detail. The rules that shape
+the code: the Auth0 access token *is* the API bearer; a fixed header block goes on every
+call; which id lands in `SpaceID` depends on the building's `accountType`; times go up
+as UTC `Z` on 30-minute boundaries; a booking returns HTTP 200 even when refused, so
+`BookingStatus === "BookingSuccess"` is what success means; the bookings list stamps
+local wall clock with `Z`; `get-spaces` needs the building's own offset for the
+requested date. The places-and-clocks rules are stated once in
+[LOCATION_AND_TIME.md](./LOCATION_AND_TIME.md).
+
+## 7. Quote token
+
+```text
+quote = base64url(json(QuotePayload)) "." base64url(hmacSha256(QUOTE_SIGNING_KEY, payloadB64))
 ```
-Booking-service API (src/core/booking-service.ts):
-```ts
-listLocations({ query?, city?, lat?, lng?, radiusKm?, limit? }) -> Location[]
-searchAvailability({ locationId?|city?, date, startTime?, endTime?, spaceType="desk", capacity? }) -> Array<SpaceAvailability & { quote: string; summary: string }>
-createBooking({ quote, idempotencyKey?, dryRun?, note? }, actor) -> { booking: Booking; dryRun: boolean; creditsCharged: number; capsRemaining: {day:number; week:number}; summary: string }
-listBookings({ from?, to?, includePast? }) -> Booking[]
-cancelBooking({ bookingId, idempotencyKey?, dryRun? }, actor) -> { bookingId; status; creditsRefunded?; summary }
-whoami() -> { profile: Profile; credits?: Credits; session: SessionInfo; actor: Actor; caps: {...}; writeEnabled: boolean }
-```
-Error codes (src/errors.ts): `UNAUTHORIZED, FORBIDDEN_SCOPE, WRITE_DISABLED, SESSION_MISSING, SESSION_EXPIRED, UPSTREAM_AUTH, UPSTREAM_BLOCKED (auth0 requires_verification/captcha), UPSTREAM_RATE_LIMITED, UPSTREAM_ERROR, QUOTE_INVALID, QUOTE_EXPIRED, CAP_EXCEEDED, NOT_AVAILABLE, BOOKING_REFUSED, NOT_FOUND, UNSUPPORTED_SPACE_TYPE, VALIDATION`. Every error has a `hint` for the agent (e.g. SESSION_MISSING -> "Ask the user to open <base>/admin/connect").
 
-## 5. WeWork upstream facts
-See [WEWORK_API.md](./WEWORK_API.md) for the endpoint-level detail. Key rules: access token IS the bearer; header block; SpaceID rules by accountType; UTC Z on 30-min boundaries; booking 200-with-refusal -> check BookingStatus=="BookingSuccess"; bookings list times are local-wall-clock-stamped-Z; cancel body; monthly-credits; discovery via auth0/v2/config. Prefer `inventory-details?propertyGuid&spaceGuid` for kubeSpaceId when present; fall back to accountType rules.
+Verification is a constant-time compare, then an `exp` check, then an `accountId` match
+against the calling actor. `create_booking` accepts a quote and nothing else, so an
+agent cannot describe a booking in free text.
 
-## 6. Quote token
-`quote = base64url(json(QuotePayload)) + "." + base64url(hmacSha256(QUOTE_SIGNING_KEY, payloadB64))`. verify: constant-time compare, exp check, accountId match. create_booking accepts ONLY a quote.
+## 8. Durable Object `WeWorkSession`
 
-## 7. Durable Object `WeWorkSession` (SQLite)
-Tables: `session(id TEXT PK, access_token, refresh_token, expires_at INT, obtained_at INT, source, user_uuid, last_error)`, `api_keys(id TEXT PK, name, sha256 UNIQUE, scopes JSON, created_at INT, last_used_at INT, revoked_at INT)`, `idempotency(key PK, kind, result_json, created_at)`, `bookings_ledger(booking_id PK, date, credits, created_at, actor, dry_run INT)`, `audit(id AUTOINC, ts, actor, tool, args_redacted, outcome, booking_id, credits, dry_run)`.
-RPC methods (use DO RPC, class extends DurableObject): `getAccessToken({minTtlSec, force})` (coalesce in-flight login/refresh via instance field promise; strategy order: refresh -> headless login (if creds present & LOGIN_STRATEGY != manual) -> throw SESSION_MISSING/UPSTREAM_BLOCKED), `setSession(rec)`, `getSessionInfo()`, `clearSession()`, `checkAndReserveCap({date, credits, dryRun})`, `recordBooking(...)`, `releaseBooking(bookingId)`, `idempotencyGet/Put`, `audit(entry)`, `listAudit({limit})`, `createApiKey({id,name,sha256,scopes})`, `listApiKeys()`, `revokeApiKey(id)`, `matchApiKey(sha256)`, `maintain()` (cron: refresh if <6h, prune). Never log tokens.
+One instance, `session:default`, SQLite-backed. Tables: `session`, `api_keys`,
+`idempotency`, `bookings_ledger`, `audit`, `locations`.
 
-## 8. Front door
-- `/mcp` (POST/GET) and `/api/*` are protected: Actor from OAuth access token (workers-oauth-provider validates; props {name, scopes}) OR `Authorization: Bearer ww_<key>` matched by sha256 against the `api_keys` table in the Durable Object (superseding the AUTH_TOKENS secret in this section). Guard returns 401 with `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"` so MCP clients discover OAuth.
-- OAuth: `OAuthProvider({ apiRoute: ["/mcp","/api/"], apiHandler, defaultHandler, authorizeEndpoint:"/oauth/authorize", tokenEndpoint:"/oauth/token", clientRegistrationEndpoint:"/oauth/register" })`. Authorize page: minimal HTML form, ADMIN_PASSWORD, shows client name + requested scopes, approve -> completeAuthorization with props. Support CIMD/DCR as the lib does by default.
-- `/admin/*` (connect page, session POST, API keys, audit, status) gated by the admin cookie only (login form with ADMIN_PASSWORD). The same cookie signs off OAuth approvals, so the operator types the password once per browser.
-- `/healthz` public: `{ok, version, secrets:{weworkCredentials:bool, adminPassword:bool, quoteKey:bool, cookieKey:bool}, session:SessionInfo(no tokens), writeEnabled}`.
-- Connect page: instructions + textarea to paste (a) the Auth0 SPA localStorage cache entry JSON (key prefix `@@auth0spajs@@`), (b) a raw `{access_token, refresh_token?, expires_in|expires_at}` JSON, or (c) just a bearer token. Bookmarklet: reads all localStorage keys starting `@@auth0spajs@@` on members.wework.com and POSTs to `<base>/admin/session` via fetch with credentials (CORS: allow origin https://members.wework.com on that route only, require admin cookie... NOTE cookie is SameSite so cross-site fetch may not carry it; therefore bookmarklet instead copies JSON to clipboard and opens the connect page, where the user pastes. Keep it simple and reliable.). Parse: decode JWT for exp and `https://wework.com/user_uuid`.
+RPC surface (the class extends `DurableObject`, so these are direct RPC calls):
+`getAccessToken`, `setSession`, `getSessionInfo`, `clearSession`, `reserveBooking`,
+`confirmBooking`, `releaseBooking`, `cancelLedger`, `capsRemaining`, `idempotencyGet`,
+`idempotencyPut`, `rememberLocations`, `getLocation`, `createApiKey`, `listApiKeys`,
+`revokeApiKey`, `matchApiKey`, `audit`, `listAudit`, `maintain`, `ping`.
 
-## 9. MCP tools (names exact)
-whoami, list_locations, search_availability, create_booking, list_bookings, cancel_booking. Each returns `content:[{type:"text", text: summary}]` + `structuredContent`. Errors -> `isError:true` with `{code, message, hint}` text. Server `instructions` includes disclaimer + "always search then confirm with user before create_booking; report credits; times are local". Tool annotations: readOnlyHint for reads, destructiveHint for cancel.
-REST: GET /api/whoami, GET /api/locations, GET /api/availability, POST /api/bookings, GET /api/bookings, DELETE /api/bookings/:id, GET /api/openapi.json (public), GET /api/docs (optional tiny HTML). Same JSON shapes as structuredContent.
+`getAccessToken` coalesces concurrent logins and refreshes on an instance field, and
+tries refresh first, then headless login when credentials are present and
+`LOGIN_STRATEGY` is not `manual`, then raises `SESSION_MISSING` or `UPSTREAM_BLOCKED`.
+Nothing in this class logs a token.
 
-## 10. Conventions
-- No secrets/tokens in logs, errors, or tool outputs. Use redact().
-- All upstream calls through `WeWorkClient` with injected `fetch` (for tests) and `TokenProvider`; on 401 -> forceRefresh once and retry.
-- Rate-limit politeness: 429 -> respect Retry-After up to 3 tries on auth; single attempt on booking.
-- Tests: unit (quote, time, mappers, tokens, guard), DO tests via vitest-pool-workers (`env.SESSION`), integration via `SELF.fetch` on /mcp (tools/list, tools/call with forged quote -> QUOTE_INVALID; dry_run) with fetch stubbed via a module-level `setUpstreamFetch()` seam or `fetchMock` from cloudflare:test.
-- Commit style: conventional commits. Do not commit `.dev.vars`, `.wrangler/`, `node_modules/`.
+The `locations` table is what makes a search by bare `location_id` work in any isolate:
+every listing writes the buildings it saw, and the write is awaited.
+
+## 9. Front door
+
+- `/mcp` and `/api/*` are protected. The `OAuthProvider` validates OAuth access tokens
+  and, through its `resolveExternalToken` seam, API keys presented as
+  `Authorization: Bearer ww_...` and matched by SHA-256 against the `api_keys` table.
+  Either way the caller's props arrive on `ctx.props` and `src/auth/guard.ts` turns
+  them into an `Actor`. The provider does not enforce scope, so the operations do.
+- An unauthenticated request gets 401 with
+  `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"`,
+  which is how an MCP client discovers that this server speaks OAuth.
+- OAuth endpoints: `/oauth/authorize` (our approval page), `/oauth/token` and
+  `/oauth/register` (the provider's). The approval page asks for `ADMIN_PASSWORD`,
+  shows the client name and the requested scopes, and calls `completeAuthorization`
+  with the actor props. Dynamic client registration and CIMD are on.
+- `/admin/*` takes the signed admin cookie and nothing else. The same cookie signs off
+  OAuth approvals, so the operator types the password once per browser. Pages: the
+  dashboard, `/admin/connect`, `POST /admin/session`, `/admin/keys`, `/admin/audit`,
+  `/admin/status`.
+- `/healthz`, `/api/openapi.json` and `/api/docs` are public and secret-free.
+- The connect page accepts the Auth0 SPA `localStorage` cache entry (key prefix
+  `@@auth0spajs@@`), a raw `{access_token, refresh_token?, expires_in|expires_at}`
+  object, or a bare bearer token. A bookmarklet copies the cache to the clipboard
+  rather than posting it here: the admin cookie is `SameSite=Lax`, so a cross-site
+  fetch from `members.wework.com` would not carry it.
+
+## 10. Tools and routes
+
+MCP tools, names exact: `whoami`, `list_locations`, `search_availability`,
+`create_booking`, `list_bookings`, `cancel_booking`. Each returns
+`content: [{ type: "text", text: summary }]` plus `structuredContent`; a failure is
+`isError: true` carrying `{ code, message, hint }`. Reads are annotated `readOnlyHint`,
+cancel `destructiveHint`.
+
+REST mirror: `GET /api/whoami`, `GET /api/locations`, `GET /api/availability`,
+`POST /api/bookings`, `GET /api/bookings`, `DELETE /api/bookings/:id`, plus the public
+`GET /api/openapi.json` and `GET /api/docs`. Both front doors go through
+`src/mcp/operations.ts`, so a REST body and the matching `structuredContent` are the
+same bytes.
+
+## 11. Conventions
+
+- No secret, token, cookie or password in a log line, an error, or a tool result. Log
+  output goes through `redact()`.
+- Every upstream call goes through `WeWorkClient` with an injected `fetch` and a
+  `TokenStore`. On a 401 it forces one refresh and retries once.
+- Rate limiting: honour `Retry-After` up to three attempts on auth operations; never
+  retry a booking.
+- Commit style is Conventional Commits. Never commit `.dev.vars`, `.wrangler/` or
+  `wrangler.local.jsonc`.

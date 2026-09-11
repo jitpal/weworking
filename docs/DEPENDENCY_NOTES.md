@@ -1,12 +1,11 @@
 # Dependency notes
 
 Exactly what the pinned libraries export and expect, read out of their own `.d.ts`
-files in this repository's `node_modules` on 2026-09-11. Written for the engineers
-building the MCP, OAuth, HTTP and session modules so nobody has to re-derive a
+files in this repository's `node_modules` on 2026-09-11, so nobody has to re-derive a
 signature from a blog post.
 
-Re-verify with `npm run typecheck` after any dependency bump; every snippet below
-was compiled against the installed versions before being written down.
+Re-verify with `npm run typecheck` after any dependency bump; every snippet below was
+compiled against the installed versions before being written down.
 
 ## Installed versions
 
@@ -123,21 +122,28 @@ Two halves, and they must match:
    function returning `McpAuthContext | undefined` from async-local storage.
 
 ```ts
-// src/mcp/server.ts, sketch
+// src/mcp/server.ts, abridged
 const handler = createMcpHandler(
-  (ctx) => createServer(ctx),           // fresh McpServer per request
+  createMcpServerFactory(() => ({ service, actor })),  // fresh McpServer per request
   {
-    route: "/mcp",
-    authContext: { props: { ...actor } },  // actor from src/auth/guard.ts
+    route,
+    authContext: { props: { ...actor } },              // actor from src/auth/guard.ts
+    allowedHostnames: resolveAllowedHostnames(request, env, extra),
   },
 );
 return handler.fetch(request);
 ```
 
-Because the handler is cheap and stateless, constructing it per request (to inject
-a per-request `authContext`) is the intended pattern. Alternatively close over the
-`Actor` in the factory and ignore `getMcpAuthContext()` entirely, the factory
-receives `ctx.authInfo` and `ctx.requestInfo` too (see below).
+Because the handler is cheap and stateless, constructing it per request (to inject a
+per-request `authContext`) is the intended pattern. `src/mcp/server.ts` does both
+halves: the factory closes over the `Actor`, which is how the tools actually read it,
+and the same object goes into `authContext.props` so `getMcpAuthContext()` works for
+anything else running inside the request.
+
+`allowedHostnames` needs care. The library only defaults to a host check for localhost
+and `*.workers.dev`, performs no check at all on a custom domain, and passing a list
+*replaces* the defaults rather than adding to them, so the list we pass always
+contains the request's own hostname.
 
 `StatelessMcpHandler` is callable three ways:
 
@@ -233,6 +239,7 @@ no-argument tools, and is friendlier to clients than omitting it.
 
 ### Fallback transport (if `agents` ever has to go)
 
+If `agents` ever becomes unusable, the escape hatch is already identified.
 The web-standard streamable HTTP transport **does** exist, exported as
 `WebStandardStreamableHTTPServerTransport` (options type
 `WebStandardStreamableHTTPServerTransportOptions`; the stateless idiom is
@@ -307,12 +314,13 @@ interface OAuthProviderOptions<Env = Cloudflare.Env> {
 }
 ```
 
-`resolveExternalToken` is worth knowing about: it is the library's official seam for
-accepting a **non-OAuth** credential on a protected route and returning
-`{ props, audience }`. That is an alternative to our own static-bearer guard ,
-evaluate it, but the hand-rolled guard in `src/auth/guard.ts` stays the plan because
-it must also answer 401 with the `WWW-Authenticate: Bearer resource_metadata=…`
-challenge MCP clients need.
+`resolveExternalToken` is the library's official seam for accepting a **non-OAuth**
+credential on a protected route and returning `{ props, audience }`. It is wired in
+`src/auth/oauth.ts`: an API key reaches `/mcp` and `/api/*` through exactly the same
+path as an OAuth token, with `ctx.props` already populated, and the provider's own 401
+carries the `WWW-Authenticate: Bearer resource_metadata=…` challenge MCP clients need.
+`src/auth/guard.ts#resolveActor` still resolves the same `Actor` from a raw header, so
+middleware outside the provider, and any test, behaves identically.
 
 ### `OAUTH_PROVIDER` binding and `completeAuthorization`
 
@@ -387,11 +395,11 @@ our Hono app (`/healthz`, `/admin/*`, the authorize page) lives.
 
 ## Tests: `@cloudflare/vitest-pool-workers` 0.22.0
 
-**The import path in the spec does not exist in this version.** There is no
+**The import path most guides use does not exist in this version.** There is no
 `@cloudflare/vitest-pool-workers/config` subpath and no `defineWorkersConfig` /
-`defineWorkersProject` export. 0.22.0 exports exactly three subpaths ,
-`.`, `./types` and `./codemods/vitest-v3-to-v4`, and the pool is wired up as a
-**Vite plugin** from the package root:
+`defineWorkersProject` export. 0.22.0 exports exactly three subpaths, `.`, `./types`
+and `./codemods/vitest-v3-to-v4`, and the pool is wired up as a **Vite plugin** from
+the package root:
 
 ```ts
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
@@ -404,27 +412,31 @@ export default defineConfig({
 ```
 
 `cloudflareTest(options | (ctx) => options): Vite.Plugin`. The options schema is
-`{ main?, remoteBindings?, verbose?, additionalExports?, miniflare?, wrangler? }` ,
-note there is no `isolatedStorage` or `singleWorker` key any more. `cloudflarePool`
+`{ main?, remoteBindings?, verbose?, additionalExports?, miniflare?, wrangler? }`.
+Note there is no `isolatedStorage` or `singleWorker` key any more. `cloudflarePool`
 (a `PoolRunnerInitializer`) is the lower-level alternative.
 
-Types: add `"@cloudflare/vitest-pool-workers/types"` to `compilerOptions.types` ,
+Types: add `"@cloudflare/vitest-pool-workers/types"` to `compilerOptions.types`,
 **not** the bare package name, which has no ambient types. In 0.22 `env` from
 `cloudflare:test` is typed as **`Cloudflare.Env`**, not the old `ProvidedEnv`
 interface, so extra test-only bindings are declared by augmenting
 `declare global { namespace Cloudflare { interface Env { … } } }`. That augmentation
 lives in `src/env.ts`, next to the `Env` interface it mirrors.
 
-The pool **does** start in this sandbox (`workerd 2026-08-15`); all scaffold tests
-pass under it, so no plain-node fallback project was needed. If workerd ever fails
-to start on a contributor's machine, add a second project to `defineConfig` with
-`environment: "node"` restricted to the pure-unit files (`quote`, `time`,
-`mappers`, `tokens`, `redact`), they take no bindings.
+The whole suite runs under the pool (`workerd 2026-08-15`), so there is no plain-node
+fallback project. If workerd ever fails to start on a contributor's machine, add a
+second project to `defineConfig` with `environment: "node"` restricted to the pure-unit
+files (`quote`, `time`, `mappers`, `tokens`, `redact`); they take no bindings.
+
+One pool-specific trap: `vi.mock` is applied across the whole run, not just the file
+that declares it. A factory that replaces a module wholesale therefore has to satisfy
+every importer in the graph, which is why the session tests mock `src/wework/auth`
+partially, through `importOriginal`.
 
 ## TypeScript version
 
 `typescript@7.0.2` is the current latest, but this repo pins **`typescript@^5.9`**
-(5.9.3 installed). TS 7 is the native-port release line; Biome 2.5 and the
-`@cloudflare/vitest-pool-workers` 0.22 type surface are only tested against 5.x, and
-the spec explicitly permits 5.9 when TS 7 risks tooling trouble. Revisit once the
+(5.9.3 installed). TS 7 is the native-port release line, and Biome 2.5 and the
+`@cloudflare/vitest-pool-workers` 0.22 type surface are only tested against 5.x.
+Dependabot is told not to offer the major (`.github/dependabot.yml`). Revisit once the
 Cloudflare and Biome toolchains declare TS 7 support.
