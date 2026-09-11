@@ -5,7 +5,9 @@
  *
  * Before your first deploy:
  *   1. `npx wrangler kv namespace create OAUTH_KV` and paste the returned id
- *      into `kv_namespaces[0].id` below.
+ *      into `kv_namespaces[0].id`. Copy this file to `wrangler.local.jsonc`
+ *      (gitignored) and edit the copy: every `npm run` script prefers it when it
+ *      exists, so the committed config keeps its placeholder.
  *   2. Set the secrets listed in `.dev.vars.example` with `npx wrangler secret put <NAME>`.
  *   3. Tune the `vars` block — it is the safety configuration (caps, kill switch).
  *

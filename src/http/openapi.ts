@@ -114,7 +114,7 @@ export function openapiDocument(baseUrl: string): Record<string, unknown> {
         "",
         "Dates are `YYYY-MM-DD` and times are `HH:MM`, **local wall clock at the building**, snapped to 30-minute boundaries. Responses carry both local (`startLocal`) and true-UTC (`startUtc`) instants.",
         "",
-        "`POST /api/bookings` accepts only a signed `quote` from `GET /api/availability`: it is a capability token that pins the space, the window and the price, and it expires (default 10 minutes).",
+        "`POST /api/bookings` accepts only a signed `quote` from `GET /api/availability`: it is a capability token that pins the space, the window and the price, and it expires ten minutes after the search that issued it.",
         "",
         "Request parameters are `snake_case`; response fields are `camelCase`.",
       ].join("\n"),

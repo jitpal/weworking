@@ -77,7 +77,7 @@ Therefore:
 - `/healthz` reports presence booleans, never values.
 - An API key is displayed on exactly one page render, when it is minted. Nothing else in the worker can produce it: only its SHA-256 is stored, and no page, route or log line shows even that.
 - The admin password and signing keys are never echoed, not even masked.
-- All logging goes through `src/redact.ts` (`redact`, `redactHeaders`) which strips `Authorization`, `WeWorkAuth`, `Cookie`, `Set-Cookie`, token-ish fields, and email addresses before anything reaches the Workers log stream.
+- All logging goes through `src/redact.ts`. `redact()` replaces the value of any property whose *name* contains `token`, `password`, `secret`, `authorization`, `cookie` or `refresh`; `redactHeaders()` applies the same test to header names; `redactUrl()` also replaces the `code`, `state` and `login_ticket` query parameters. It is a key-name filter, not a content scanner, so the thing that keeps a profile body or an upstream response out of the log stream is that no call site logs one: what gets logged is a label, a status, a byte count and an error code.
 - The `/admin/connect` paste flow keeps the credential on the boundary: the user pastes it into a browser form over HTTPS, never into a chat window. The `book-a-desk` skill instructs agents to refuse to accept a password or token in conversation and to send the user to the connect page instead.
 
 The Worker credential the client holds is the one secret the agent host legitimately has, and it is held by the client runtime (config file, OS keychain, `~/.mcp-auth`). It is not passed through the model's context either.
@@ -99,8 +99,8 @@ Running this as a shared service for other people's WeWork accounts is outside t
 
 - **Never logged:** WeWork access or refresh tokens, `Authorization` / `WeWorkAuth` header values, cookies, `ADMIN_PASSWORD`, signing keys, bearer token plaintext, Auth0 `login_ticket`, `code`, `code_verifier`, or password form bodies.
 - **Logged at error level:** error code, upstream status, route, elapsed time, and a redacted summary of the upstream error envelope (`responseStatus.type` / `title`).
-- **The audit log** (`audit` table in the Durable Object) records timestamp, actor name and kind, tool, redacted arguments, outcome, booking id, credits, and the dry-run flag. Arguments pass through `redact()`, so a quote is stored as a fingerprint rather than the signed blob, and free-text notes are truncated.
-- **`WeWorkUUID`** and the user's email are treated as personal data: they appear in `whoami` output (the user asked) but are redacted from logs.
+- **The audit log** (`audit` table in the Durable Object) records timestamp, actor, tool, redacted arguments, outcome, booking id, credits, and the dry-run flag. The actor column is `<kind>:<name>`, where `oauth` is an OAuth grant, `bearer` is an API key minted at `/admin/keys`, and `admin:cookie` is the operator acting in a browser. Arguments pass through `redact()`, so a quote is stored as a fingerprint rather than the signed blob, and free-text notes are truncated.
+- **`WeWorkUUID`** and the user's email are treated as personal data. They appear in `whoami` output, because the user asked for it, and no log line includes them.
 - Cloudflare retains Worker logs per your own account settings; the audit log lives in the DO until pruned by the daily cron. Both are visible to anyone with access to your Cloudflare account, which is one more reason to keep that account locked down with a hardware key.
 
 ## Residual risks (accepted)

@@ -59,13 +59,15 @@ No parameters. Call this first if you do not know whether the deployment is conn
     "hasRefreshToken": true
   },
   "actor": { "kind": "bearer", "name": "claude-code", "scopes": ["read", "write"], "accountId": "default" },
-  "caps": { "maxBookingsPerDay": 1, "maxBookingsPerWeek": 5, "maxCreditsPerBooking": 0 },
-  "capsRemaining": { "day": 1, "week": 3 },
+  "caps": { "maxBookingsPerDay": 1, "maxBookingsPerWeek": 7, "maxCreditsPerBooking": 0 },
+  "capsRemaining": { "day": 1, "week": 6 },
   "writeEnabled": true
 }
 ```
 
 `whoami` never returns a WeWork token. If `session.state` is `none` or `expired`, stop and tell the user to reconnect.
+
+`caps` is what the deployment is configured to allow and `capsRemaining` is what is left today and this ISO week. The defaults are one booking per day and seven per week, with `maxCreditsPerBooking: 0`, which permits only bookings that cost no credits. An operator who sets `MAX_CREDITS_PER_BOOKING="unlimited"` reports `-1` here.
 
 ### Places and times
 
@@ -204,7 +206,7 @@ Exactly one of `location_id`, `city`, or `lat`+`lng` is required. Every result i
   },
   "dryRun": false,
   "creditsCharged": 1,
-  "capsRemaining": { "day": 0, "week": 2 },
+  "capsRemaining": { "day": 0, "week": 5 },
   "summary": "Booked 1 Poultry, London for Mon 21 Sep 09:00-17:00. 1 credit. Booking BK-8891234. Free cancellation until 08:00 local."
 }
 ```
@@ -267,9 +269,7 @@ Upstream stamps these times as `Z` even though they are local wall clock; the ma
 
 ## Admin routes
 
-| Route | Auth | Purpose |
-| --- | --- | --- |
-Every route under `/admin` needs the signed admin cookie from `POST /admin/login` (`ADMIN_PASSWORD`). No agent credential opens them.
+Every route under `/admin` needs the signed admin cookie from `POST /admin/login` (`ADMIN_PASSWORD`). No agent credential opens them, whatever its scopes.
 
 | Route | Purpose |
 | --- | --- |

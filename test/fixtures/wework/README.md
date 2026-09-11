@@ -1,9 +1,8 @@
 # WeWork fixtures — hand-written, not recorded
 
 **None of these files came off the wire.** Every one was written by hand from the
-public reverse-engineering notes in [`docs/WEWORK_API.md`](../../../docs/WEWORK_API.md)
-— which were themselves derived from four open-source clients (dvcrn/wework-cli,
-jeromewir/webook, benoib/webook, SridarDhandapani/hotdesker), not from WeWork
+notes in [`docs/WEWORK_API.md`](../../../docs/WEWORK_API.md), which were themselves
+derived from the open-source clients listed there rather than from any WeWork
 documentation, because there is none.
 
 That has two consequences, and both matter:
@@ -19,13 +18,16 @@ That has two consequences, and both matter:
    the notes are marked *inferred* (notably `inventory-details`, whose parameters
    were renamed in Aug 2026, and the `MailData` / `mailParams` block shapes), the
    fixture is a best guess. The first run against the live API is the real test; the
-   checklist lives in the WeWork engineer's handover notes and in
-   [`docs/CAPTURE_GUIDE.md`](../../../docs/CAPTURE_GUIDE.md).
+   endpoints that still need one are marked *inferred* in
+   [`docs/WEWORK_API.md`](../../../docs/WEWORK_API.md), and
+   [`docs/CAPTURE_GUIDE.md`](../../../docs/CAPTURE_GUIDE.md) says how to record one.
 
 When a real capture becomes available, replace these with
-`node scripts/record-fixture.mjs` output (it redacts on the way out), read the file
-before committing it, and delete this paragraph's caveat for the endpoints you
-replaced.
+`node scripts/record-fixture.mjs` output (it redacts on the way out) and drop the
+caveat for the endpoints you replaced. **Read the file before committing it.** A real
+WeWork response can carry `access_token`, `Set-Cookie`, the member's email and their
+home address, and a fixture is committed forever: git history is not a safe place to
+discover a leak.
 
 ## The synthetic JWT
 
@@ -61,7 +63,6 @@ does it and a clean fixture would hide a bug:
 | `get-spaces.json` | Three workspaces across two locations: `accountType` 2 (with `reservable.KubeId`) and `accountType` 4 (with `inventoryUuid` and an empty `reservable`), so both `SpaceID` rules are covered. One workspace has `seat.available: 0`. |
 | `get-spaces.json` | The nested `location` is **partial** (no `name`), as upstream returns it — the client merges it with what `listLocations*` already fetched. |
 | `booking-refused.json` | HTTP **200** with `BookingStatus: "BookingFailed"`. This is how WeWork declines a booking. |
-| `cancel-true.json` | The whole body is the JSON literal `true`. |
 | `city-details.json` | `"Berlin"` appears twice, differently cased, to exercise de-duplication. |
 | `error-envelope.json` | `{responseStatus:{type:"error"}}`, which also arrives with HTTP 200. |
 | `inventory-details-empty.json` | `kubeSpaceId: ""` — the client must fall back to the `accountType` rules rather than book an empty space id. |
@@ -84,5 +85,4 @@ does it and a clean fixture would hide a bug:
 | `quote.json` | `POST /common-booking/quote` |
 | `booking-success.json`, `booking-refused.json` | `POST /common-booking/` |
 | `upcoming-bookings.json` | `GET /common-booking/get-app-upcoming-bookings` |
-| `cancel-true.json` | `POST /common-booking/cancel` |
 | `error-envelope.json` | any endpoint's 200-with-error |

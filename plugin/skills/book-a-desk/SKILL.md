@@ -43,7 +43,7 @@ For "what do I have booked", just call `list_bookings`. For cancelling, call `li
 | `UPSTREAM_AUTH` | WeWork rejected the stored token | tell the user to reconnect; stop |
 | `UPSTREAM_RATE_LIMITED` | WeWork returned 429 | wait, then at most one retry; never loop |
 | `UPSTREAM_ERROR` | upstream failure | one retry for a read, none for a booking; then report |
-| `QUOTE_EXPIRED` | quote older than its TTL | re-run `search_availability`, re-confirm if the price changed, book again |
+| `QUOTE_EXPIRED` | quote older than ten minutes | re-run `search_availability`, re-confirm if the price changed, book again |
 | `QUOTE_INVALID` | quote was altered or is from elsewhere | re-run `search_availability` and copy the quote exactly |
 | `CAP_EXCEEDED` | daily/weekly cap or credit ceiling hit | explain the cap; stop |
 | `NOT_AVAILABLE` | the desk went while you were asking | search again and offer the new options |

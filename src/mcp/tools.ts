@@ -112,7 +112,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         "This is the ONLY source of quotes: create_booking accepts a quote and nothing else, so always search first, show the user the options with their credit cost, and book the one they pick.",
         "date is YYYY-MM-DD and start_time/end_time are HH:MM, both local at the building; times are snapped to 30-minute boundaries. Omit the times to get the building's full opening hours.",
         "Each result reports credits (the WeWork credits the booking would spend), seatsAvailable, local and UTC instants, and an opaque quote string to pass through verbatim.",
-        "Quotes expire (default 10 minutes) — if the user takes a while to decide, search again rather than booking a stale quote.",
+        "Quotes expire ten minutes after the search that issued them — if the user takes a while to decide, search again rather than booking a stale quote.",
         "Only hot desks are implemented; space_type 'meeting_room' or 'private_office' returns UNSUPPORTED_SPACE_TYPE.",
         "Read-only: searching spends nothing.",
       ].join(" "),

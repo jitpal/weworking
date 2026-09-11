@@ -17,7 +17,7 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this sof
 ## In scope
 
 - Authentication and authorisation bypass: reaching `/mcp`, `/api/*`, or `/admin/*` without a valid OAuth token, API key, or admin cookie.
-- Scope escalation: a `read` credential performing a write, or a non-`admin` credential reading the audit log or replacing the session.
+- Scope escalation: a `read` credential performing a write, or any agent credential reaching `/admin/*` to read the audit log, mint a key, or replace the stored session. Those pages take the admin cookie only; no scope opens them.
 - Quote forgery: getting `create_booking` to accept a quote that was not signed by `QUOTE_SIGNING_KEY`, or replaying an expired one.
 - Cap or kill-switch bypass: booking past `MAX_BOOKINGS_PER_DAY` / `MAX_BOOKINGS_PER_WEEK` / `MAX_CREDITS_PER_BOOKING`, or writing while `WRITE_ENABLED="false"`.
 - Token leakage: any path where a WeWork access token, refresh token, or the admin password appears in a response body, tool output, error message, log line, or the audit log.
@@ -28,7 +28,7 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this sof
 ## Out of scope
 
 - Vulnerabilities in WeWork's own services. Report those to WeWork.
-- Anything requiring you to already hold `ADMIN_PASSWORD`, a valid `admin`-scoped token, or access to the deployer's Cloudflare account.
+- Anything requiring you to already hold `ADMIN_PASSWORD` or access to the deployer's Cloudflare account.
 - Auth0 bot detection blocking automatic login. That is a documented limitation.
 - WeWork changing or removing an endpoint. Open a normal `api_change` issue.
 - Denial of service by spending your own credits or exhausting your own Worker quota.

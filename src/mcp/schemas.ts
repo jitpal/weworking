@@ -161,7 +161,7 @@ export const createBookingInput = z.object({
     .string()
     .min(1)
     .describe(
-      "An opaque signed quote from search_availability, passed verbatim. It is the only way to identify what to book; it cannot be constructed or edited, and it expires (default 10 minutes).",
+      "An opaque signed quote from search_availability, passed verbatim. It is the only way to identify what to book; it cannot be constructed or edited, and it expires ten minutes after the search that issued it.",
     ),
   idempotency_key: idempotencyKeyField.optional(),
   dry_run: dryRunField.optional(),
