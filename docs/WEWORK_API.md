@@ -1,20 +1,20 @@
 # WeWork member API notes (unofficial, reverse-engineered)
 
 Everything below was derived by reading open-source clients and browser captures, not
-from any WeWork documentation — there is no public API. Treat it as a field report:
+from any WeWork documentation, there is no public API. Treat it as a field report:
 endpoints and payload shapes change without notice, and anything marked *inferred* has
 not been exercised end to end.
 
 Labels used here:
 
-- **verified** — observed in at least two independent implementations, or confirmed
+- **verified**, observed in at least two independent implementations, or confirmed
   against a live capture.
-- **inferred** — read from one source, or deduced from surrounding behaviour. Expect
+- **inferred**, read from one source, or deduced from surrounding behaviour. Expect
   to have to fix it.
 
 Last reviewed: 2026-09-11.
 
-## WeWork API — **verified** (cross-checked against dvcrn/wework-cli, jeromewir/webook, benoib/webook, hotdesker)
+## WeWork API. **Verified** (cross-checked against dvcrn/wework-cli, jeromewir/webook, benoib/webook, hotdesker)
 - Auth0 tenant: idp.wework.com ; client_id zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu ; audience "wework" ; realm "id-wework"
 - scope "openid profile email offline_access" -> refresh_token obtainable (jeromewir refresh() works)
 - redirect_uri https://members.wework.com/workplaceone/api/auth0/v2/callback?domain=members.wework.com/workplaceone
@@ -41,20 +41,20 @@ Last reviewed: 2026-09-11.
   - POST /common-booking/cancel?isOnDemand=false&platFormType=1 -> literal true
 - Booking body: SpaceType 4, ReservationID "", TriggerCalendarEvent true, Notes null/"" (string!), MailData{...}, LocationType=location.accountType, UTCOffset=location.timezoneOffset, Currency "com.wework.credits", LocationID, SpaceID, WeWorkSpaceID=workspace.uuid, StartTime/EndTime UTC Z on 30-min boundaries; booking adds ApplicationType "WorkplaceOne", PlatformType "iOS_APP", CreditRatio from quote
 - SpaceID: quote -> inventoryUuid||uuid ; booking -> accountType 2: reservable.KubeId, 4: inventoryUuid, 0: uuid (hotdesker: use kubeSpaceId from inventory-details)
-- Bookings list times = local wall clock stamped Z (not UTC) — **verified**, and a frequent source of off-by-hours bugs
+- Bookings list times = local wall clock stamped Z (not UTC). **Verified**, and a frequent source of off-by-hours bugs
 - Cancel body: bookingId, bookingLocationType=location.sourceType, creditsUsed, startTime/endTime "YYYY-MM-DDTHH:MM:SS.000" no Z, locationId, reservableId, spaceId, isBookingApprovalOn, bookingType 4, cancellationNote "", reservationId, mailParams{workspaceType:1,...}; headers Request-Source MemberWeb/WorkplaceOne/Prod, fe-pg /workplaceone/content2/your-bookings
 - Errors: {"responseStatus":{"type":"error","message","title"}}; 429 w/ Retry-After on /authorize; occasional 403 Cloudflare block
-- Risks on Workers (*inferred* — these are predictions about our own deployment, not observations): no cookie jar (manual), redirect:"manual", Auth0 bot detection on datacenter IPs (requires_verification => no headless fix), MFA unsupported, TLS fingerprint, subrequest limits (login ~10-14 subreqs), token ~12h
+- Risks on Workers (*inferred*, these are predictions about our own deployment, not observations): no cookie jar (manual), redirect:"manual", Auth0 bot detection on datacenter IPs (requires_verification => no headless fix), MFA unsupported, TLS fingerprint, subrequest limits (login ~10-14 subreqs), token ~12h
 - Recommendation: login from laptop/browser once -> persist refresh_token -> worker only refreshes. Keep headless login as option.
 
-## Prior art — the sources these notes come from
+## Prior art, the sources these notes come from
 - dvcrn/wework-cli (Go, reference, updated 2026-09-11) + dvcrn/mcp-server-wework (Go MCP, stdio, env creds)
 - SridarDhandapani/hotdesker (Chrome ext, most current endpoint intel)
 - jeromewir/webook (Go HTTP server, refresh tokens, 429 handling)
 - BugenZhao/wework-book-a-desk (Py, likely broken: uses retired endpoints), SKILL.md style
 - benoib/webook (TS, weworkbot.md spec)
 
-## Cloudflare architecture decisions — **verified** against Cloudflare docs, 2026
+## Cloudflare architecture decisions. **Verified** against Cloudflare docs, 2026
 
 (Not WeWork facts; kept here because the two sets of constraints only make sense together. The rationale lives in [DESIGN.md](./DESIGN.md).)
 - McpAgent (DO-backed) deprecated/frozen; use createMcpHandler() from agents/mcp/server (stateless, MCP 2026-07-28 + legacy), new McpServer per request (SDK>=1.26)

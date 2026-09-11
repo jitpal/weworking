@@ -89,7 +89,7 @@ Plain values in `wrangler.jsonc` under `vars`. Edit and redeploy to change them.
 npm run deploy
 ```
 
-Wrangler prints the deployed URL. Then:
+Wrangler prints the deployed URL. The root of that URL is a small landing page with links to the health check, the admin pages, and the OpenAPI document. Then:
 
 ```sh
 curl -s https://<your-worker>.workers.dev/healthz | jq
@@ -108,7 +108,7 @@ This fails in two cases, and neither clears on retry:
 
 ### Option B: paste a session
 
-1. Open `https://<your-worker>.workers.dev/admin/connect` and sign in with `ADMIN_PASSWORD`.
+1. Open `https://<your-worker>.workers.dev/admin/connect`. You are sent to `/admin/login` first; sign in with `ADMIN_PASSWORD` (the cookie lasts 12 hours).
 2. In another tab, sign in to `https://members.wework.com` as normal.
 3. Follow the instructions on the connect page to copy your session. It accepts any of:
    - the Auth0 SPA cache entry from `localStorage` (the key starting `@@auth0spajs@@`). This is the best option because it includes the refresh token;
@@ -150,6 +150,7 @@ See [CLIENTS.md](CLIENTS.md).
     "weworkCredentials": false,
     "adminPassword": true,
     "quoteKey": true,
+    "cookieKey": true,
     "authTokens": 2
   },
   "session": {

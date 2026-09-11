@@ -48,7 +48,7 @@ src/
   errors.ts                # AppError { code, message, hint, status } + codes enum
   redact.ts                # redact(obj) for logging; redactHeaders
   core/
-    types.ts               # DOMAIN TYPES (see §4) — shared contract
+    types.ts               # DOMAIN TYPES (see §4), shared contract
     quote.ts               # signQuote/verifyQuote (HMAC-SHA-256 via WebCrypto, base64url)
     booking-service.ts     # orchestrates: search -> quotes; book(quote) -> caps/idempotency/audit -> client
     time.ts                # local<->UTC helpers, 30-min rounding, IANA tz via Intl
@@ -86,7 +86,7 @@ test/
   *.test.ts
 ```
 
-## 4. Domain types (src/core/types.ts) — authoritative names
+## 4. Domain types (src/core/types.ts), authoritative names
 ```ts
 export type Scope = "read" | "write" | "admin";
 export interface Actor { kind: "oauth" | "bearer" | "admin"; name: string; scopes: Scope[]; accountId: string; } // accountId "default" in phase 1
@@ -128,7 +128,7 @@ RPC methods (use DO RPC, class extends DurableObject): `getAccessToken({minTtlSe
 ## 8. Front door
 - `/mcp` (POST/GET) and `/api/*` are protected: Actor from OAuth access token (workers-oauth-provider validates; props {name:"admin", scopes:["read","write","admin"]}) OR `Authorization: Bearer <static>` matched against AUTH_TOKENS by sha256. Guard returns 401 with `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"` so MCP clients discover OAuth.
 - OAuth: `OAuthProvider({ apiRoute: ["/mcp","/api/"], apiHandler, defaultHandler, authorizeEndpoint:"/oauth/authorize", tokenEndpoint:"/oauth/token", clientRegistrationEndpoint:"/oauth/register" })`. Authorize page: minimal HTML form, ADMIN_PASSWORD, shows client name + requested scopes, approve -> completeAuthorization with props. Support CIMD/DCR as the lib does by default.
-- `/admin/*` (connect page, session POST, audit, status) gated by admin cookie (login form with ADMIN_PASSWORD) — also accept OAuth/bearer with `admin` scope for API use (`POST /admin/session` JSON).
+- `/admin/*` (connect page, session POST, audit, status) gated by admin cookie (login form with ADMIN_PASSWORD), also accept OAuth/bearer with `admin` scope for API use (`POST /admin/session` JSON).
 - `/healthz` public: `{ok, version, secrets:{weworkCredentials:bool, adminPassword:bool, quoteKey:bool, authTokens:n}, session:SessionInfo(no tokens), writeEnabled}`.
 - Connect page: instructions + textarea to paste (a) the Auth0 SPA localStorage cache entry JSON (key prefix `@@auth0spajs@@`), (b) a raw `{access_token, refresh_token?, expires_in|expires_at}` JSON, or (c) just a bearer token. Bookmarklet: reads all localStorage keys starting `@@auth0spajs@@` on members.wework.com and POSTs to `<base>/admin/session` via fetch with credentials (CORS: allow origin https://members.wework.com on that route only, require admin cookie... NOTE cookie is SameSite so cross-site fetch may not carry it; therefore bookmarklet instead copies JSON to clipboard and opens the connect page, where the user pastes. Keep it simple and reliable.). Parse: decode JWT for exp and `https://wework.com/user_uuid`.
 

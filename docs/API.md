@@ -9,7 +9,7 @@ Two front doors over the same service layer. MCP tools and REST routes return th
 
 Everything else requires an OAuth 2.1 access token or a static bearer token (see [CLIENTS.md](CLIENTS.md)). Reads need `read`; `create_booking` and `cancel_booking` need `write`; `/admin/*` needs `admin`.
 
-Naming: MCP tool parameters and REST request bodies use `snake_case` (`dry_run`, `idempotency_key`, `space_type`). REST query strings and all response fields use the `camelCase` domain field names from `src/core/types.ts` (`locationId`, `startLocal`, `seatsAvailable`).
+Naming: every request parameter is `snake_case`, whether it is an MCP tool argument, a REST JSON body, or a REST query string (`location_id`, `start_time`, `dry_run`, `idempotency_key`). Every response field is `camelCase`, matching the domain types in `src/core/types.ts` (`locationId`, `startLocal`, `seatsAvailable`).
 
 ## Conventions
 
@@ -59,7 +59,8 @@ No parameters. Call this first if you do not know whether the deployment is conn
     "hasRefreshToken": true
   },
   "actor": { "kind": "bearer", "name": "claude-code", "scopes": ["read", "write"], "accountId": "default" },
-  "caps": { "maxPerDay": 1, "maxPerWeek": 5, "maxCreditsPerBooking": 0, "usedToday": 0, "usedThisWeek": 2 },
+  "caps": { "maxBookingsPerDay": 1, "maxBookingsPerWeek": 5, "maxCreditsPerBooking": 0 },
+  "capsRemaining": { "day": 1, "week": 3 },
   "writeEnabled": true
 }
 ```
@@ -119,7 +120,7 @@ At least one of `query`, `city`, or `lat`+`lng` is required.
 
 One of `location_id` or `city` is required.
 
-`GET /api/availability?locationId=5a9c1f70-...&date=2026-09-21&startTime=09:00&endTime=17:00`
+`GET /api/availability?location_id=5a9c1f70-...&date=2026-09-21&start_time=09:00&end_time=17:00`
 
 ```json
 {
@@ -244,7 +245,7 @@ Upstream stamps these times as `Z` even though they are local wall clock; the ma
 }
 ```
 
-Cancelling after `cancelDeadlineLocal` usually succeeds but refunds nothing; `creditsRefunded` will be `0`.
+`creditsRefunded` echoes the booking's credit cost. WeWork does not report the actual refund, and cancelling after `cancelDeadlineLocal` usually refunds nothing, so treat the figure as the upper bound.
 
 ## Admin routes
 

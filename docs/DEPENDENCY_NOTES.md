@@ -15,16 +15,16 @@ was compiled against the installed versions before being written down.
 | `hono` | 4.13.7 | router |
 | `zod` | 4.6.2 | tool schemas; `z.toJSONSchema()` for OpenAPI |
 | `agents` | 0.23.0 | `createMcpHandler` |
-| `@modelcontextprotocol/server` | 2.0.0 | `McpServer`; pinned exactly — see peers below |
+| `@modelcontextprotocol/server` | 2.0.0 | `McpServer`; pinned exactly, see peers below |
 | `@modelcontextprotocol/client` | 2.0.0 | non-optional peer of `agents` |
 | `@modelcontextprotocol/sdk` | 1.30.0 | non-optional peer of `agents` |
 | `@cloudflare/workers-oauth-provider` | 0.10.3 | needs the `OAUTH_KV` binding |
 | `wrangler` | 4.131.0 | dev |
-| `typescript` | 5.9.3 | dev — see deviation note |
-| `vitest` | 4.1.11 | dev — must stay on 4.x for the pool |
+| `typescript` | 5.9.3 | dev, see deviation note |
+| `vitest` | 4.1.11 | dev, must stay on 4.x for the pool |
 | `@cloudflare/vitest-pool-workers` | 0.22.0 | dev |
 | `@biomejs/biome` | 2.5.13 | dev |
-| `@cloudflare/workers-types` | 5.20260911.1 | dev — runtime types also come from `wrangler types` |
+| `@cloudflare/workers-types` | 5.20260911.1 | dev, runtime types also come from `wrangler types` |
 
 ### `agents` peer dependencies
 
@@ -106,7 +106,7 @@ and adds the Worker-specific options:
 | `authContext` | `McpAuthContext` | **How auth reaches the tools.** See below. |
 
 Inherited from `CreateMcpHandlerOptions`: `legacy?: "stateless" \| "reject"`
-(default `"stateless"` — 2025-era requests get a fresh per-request instance, and
+(default `"stateless"`, 2025-era requests get a fresh per-request instance, and
 `GET`/`DELETE` answer `405`), `onerror?: (error: Error) => void`,
 `responseMode?: "auto" \| "sse" \| "json"` (default `"auto"`),
 `maxSubscriptions?: number` (1024), `keepAliveMs?: number` (15000). `bus` is
@@ -119,11 +119,11 @@ Two halves, and they must match:
 1. **In**: build the handler *per request* with the resolved `Actor` in
    `options.authContext.props`. `McpAuthContext` is exactly
    `{ props: Record<string, unknown> }`.
-2. **Out**: inside a tool callback, call `getMcpAuthContext()` — a zero-argument
+2. **Out**: inside a tool callback, call `getMcpAuthContext()`, a zero-argument
    function returning `McpAuthContext | undefined` from async-local storage.
 
 ```ts
-// src/mcp/server.ts — sketch
+// src/mcp/server.ts, sketch
 const handler = createMcpHandler(
   (ctx) => createServer(ctx),           // fresh McpServer per request
   {
@@ -136,7 +136,7 @@ return handler.fetch(request);
 
 Because the handler is cheap and stateless, constructing it per request (to inject
 a per-request `authContext`) is the intended pattern. Alternatively close over the
-`Actor` in the factory and ignore `getMcpAuthContext()` entirely — the factory
+`Actor` in the factory and ignore `getMcpAuthContext()` entirely, the factory
 receives `ctx.authInfo` and `ctx.requestInfo` too (see below).
 
 `StatelessMcpHandler` is callable three ways:
@@ -150,7 +150,7 @@ type StatelessMcpHandler = {
 // McpHandlerRequestOptions = { authInfo?: AuthInfo; parsedBody?: unknown }
 ```
 
-From Hono, use `handler.fetch(c.req.raw)` — `parsedBody` is only needed when a
+From Hono, use `handler.fetch(c.req.raw)`, `parsedBody` is only needed when a
 framework already consumed the body.
 
 ## MCP: `@modelcontextprotocol/server` 2.0.0
@@ -239,8 +239,8 @@ The web-standard streamable HTTP transport **does** exist, exported as
 `{ sessionIdGenerator: undefined }`). Its `handleRequest(req: Request, options?:
 HandleRequestOptions): Promise<Response>` is Fetch-API-shaped, so it mounts in Hono
 directly. `@modelcontextprotocol/server` also exports its *own*
-`createMcpHandler(factory, options): McpHttpHandler` — a `{ fetch, close, notify,
-bus }` object — which is what `agents` wraps. Either is a drop-in escape hatch; the
+`createMcpHandler(factory, options): McpHttpHandler`, a `{ fetch, close, notify,
+bus }` object, which is what `agents` wraps. Either is a drop-in escape hatch; the
 only thing lost is `getMcpAuthContext()` and the Host/Origin guards, which would
 then be our own middleware's job.
 
@@ -263,7 +263,7 @@ import OAuthProvider, {
 ```
 
 `OAuthProvider` is both the default and a named export. `new OAuthProvider<Env>(options)`
-produces the object you `export default` — it *replaces* the Hono app as the entry
+produces the object you `export default`, it *replaces* the Hono app as the entry
 point and delegates to it.
 
 ### Constructor options (the ones that matter here)
@@ -271,7 +271,7 @@ point and delegates to it.
 ```ts
 interface OAuthProviderOptions<Env = Cloudflare.Env> {
   // Routing
-  apiRoute?: string | string[];        // e.g. ["/mcp", "/api/"] — prefixes the provider protects
+  apiRoute?: string | string[];        // e.g. ["/mcp", "/api/"], prefixes the provider protects
   apiHandler?: ExportedHandlerWithFetch<Env>
             | (new (ctx: ExecutionContext, env: Env) => WorkerEntrypointWithFetch<Env>);
   apiHandlers?: Record<string, …>;     // use instead of apiHandler for per-prefix handlers
@@ -309,7 +309,7 @@ interface OAuthProviderOptions<Env = Cloudflare.Env> {
 
 `resolveExternalToken` is worth knowing about: it is the library's official seam for
 accepting a **non-OAuth** credential on a protected route and returning
-`{ props, audience }`. That is an alternative to our own static-bearer guard —
+`{ props, audience }`. That is an alternative to our own static-bearer guard ,
 evaluate it, but the hand-rolled guard in `src/auth/guard.ts` stays the plan because
 it must also answer 401 with the `WWW-Authenticate: Bearer resource_metadata=…`
 challenge MCP clients need.
@@ -338,8 +338,8 @@ const client = await env.OAUTH_PROVIDER.lookupClient(oauthRequest.clientId); // 
 const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
   request: oauthRequest,          // AuthRequest, required
   userId: "admin",                // string, required
-  metadata: { clientName: client.clientName },  // any — shown in grant listings
-  scope: grantedScopes,           // string[] — the scopes actually granted
+  metadata: { clientName: client.clientName },  // any, shown in grant listings
+  scope: grantedScopes,           // string[], the scopes actually granted
   props: { kind: "oauth", name: "admin", scopes: grantedScopes, accountId: "default" },
   // revokeExistingGrants?: boolean; revokeExistingGrantsBatchSize?: number;
 });
@@ -357,11 +357,11 @@ Other `OAuthHelpers` methods available for `/admin`: `createClient`, `listClient
 
 The provider validates the bearer token, checks its audience, and exposes the
 decrypted `props` as **`ctx.props`** on the execution context of the protected
-handler. The handler performs no token parsing of its own — but it *must* still
+handler. The handler performs no token parsing of its own, but it *must* still
 enforce scope, because the provider does not.
 
 ```ts
-// Class form (recommended — typed props):
+// Class form (recommended, typed props):
 class ApiHandler extends WorkerEntrypoint<Env, ActorProps> {
   fetch(request: Request): Response | Promise<Response> {
     const actor = this.ctx.props;   // ActorProps
@@ -389,8 +389,8 @@ our Hono app (`/healthz`, `/admin/*`, the authorize page) lives.
 
 **The import path in the spec does not exist in this version.** There is no
 `@cloudflare/vitest-pool-workers/config` subpath and no `defineWorkersConfig` /
-`defineWorkersProject` export. 0.22.0 exports exactly three subpaths —
-`.`, `./types` and `./codemods/vitest-v3-to-v4` — and the pool is wired up as a
+`defineWorkersProject` export. 0.22.0 exports exactly three subpaths ,
+`.`, `./types` and `./codemods/vitest-v3-to-v4`, and the pool is wired up as a
 **Vite plugin** from the package root:
 
 ```ts
@@ -404,11 +404,11 @@ export default defineConfig({
 ```
 
 `cloudflareTest(options | (ctx) => options): Vite.Plugin`. The options schema is
-`{ main?, remoteBindings?, verbose?, additionalExports?, miniflare?, wrangler? }` —
+`{ main?, remoteBindings?, verbose?, additionalExports?, miniflare?, wrangler? }` ,
 note there is no `isolatedStorage` or `singleWorker` key any more. `cloudflarePool`
 (a `PoolRunnerInitializer`) is the lower-level alternative.
 
-Types: add `"@cloudflare/vitest-pool-workers/types"` to `compilerOptions.types` —
+Types: add `"@cloudflare/vitest-pool-workers/types"` to `compilerOptions.types` ,
 **not** the bare package name, which has no ambient types. In 0.22 `env` from
 `cloudflare:test` is typed as **`Cloudflare.Env`**, not the old `ProvidedEnv`
 interface, so extra test-only bindings are declared by augmenting
@@ -419,7 +419,7 @@ The pool **does** start in this sandbox (`workerd 2026-08-15`); all scaffold tes
 pass under it, so no plain-node fallback project was needed. If workerd ever fails
 to start on a contributor's machine, add a second project to `defineConfig` with
 `environment: "node"` restricted to the pure-unit files (`quote`, `time`,
-`mappers`, `tokens`, `redact`) — they take no bindings.
+`mappers`, `tokens`, `redact`), they take no bindings.
 
 ## TypeScript version
 
