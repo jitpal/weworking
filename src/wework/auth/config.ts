@@ -45,6 +45,23 @@ export const FALLBACK_AUTH0_CONFIG: Auth0Config = {
     "https://members.wework.com/workplaceone/api/auth0/v2/callback?domain=members.wework.com/workplaceone",
 };
 
+/**
+ * Hosts the login flows are allowed to talk to.
+ *
+ * Discovery is a public, unauthenticated endpoint on `members.wework.com`, and what
+ * it returns decides where `WEWORK_USERNAME` and `WEWORK_PASSWORD` are POSTed. If
+ * that endpoint (or anything that can answer for it) ever names another host, the
+ * credentials would go there. So the tenant is pinned to WeWork's own domain and to
+ * Auth0's: a tenant migration within either still works without a redeploy, and
+ * anything else falls back to {@link FALLBACK_AUTH0_CONFIG}.
+ *
+ * @param hostname a bare host, as `URL.hostname` gives it (no scheme, no port).
+ */
+export function isAllowedAuthHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  return host === "wework.com" || host.endsWith(".wework.com") || host.endsWith(".auth0.com");
+}
+
 /** The Auth0 connection (database) the member's credentials live in. */
 export const AUTH0_REALM = "id-wework";
 
@@ -111,12 +128,13 @@ export function normaliseConfig(body: unknown): Auth0Config | undefined {
   const params =
     pickObject(inner.authorizationParams) ?? pickObject(inner.authorizationParam) ?? {};
 
-  const domain = normaliseDomain(str(inner.domain) ?? str(inner.auth0Domain));
+  const domain = pinnedDomain(normaliseDomain(str(inner.domain) ?? str(inner.auth0Domain)));
   const clientId = str(inner.clientId) ?? str(inner.client_id);
   const scope = str(params.scope) ?? str(inner.scope);
   const audience = str(params.audience) ?? str(inner.audience);
-  const redirectUri =
-    str(params.redirect_uri) ?? str(params.redirectUri) ?? str(inner.redirect_uri);
+  const redirectUri = pinnedRedirect(
+    str(params.redirect_uri) ?? str(params.redirectUri) ?? str(inner.redirect_uri),
+  );
 
   if (!domain && !clientId && !scope && !audience && !redirectUri) return undefined;
 
@@ -127,6 +145,36 @@ export function normaliseConfig(body: unknown): Auth0Config | undefined {
     audience: audience ?? FALLBACK_AUTH0_CONFIG.audience,
     redirectUri: redirectUri ?? FALLBACK_AUTH0_CONFIG.redirectUri,
   };
+}
+
+/** The discovered tenant host, or `undefined` when it is not one we will trust. */
+function pinnedDomain(domain: string | undefined): string | undefined {
+  if (!domain) return undefined;
+  if (isAllowedAuthHost(domain)) return domain;
+  offTenant("domain", domain);
+  return undefined;
+}
+
+/** The discovered `redirect_uri`, or `undefined` when its host is not one we trust. */
+function pinnedRedirect(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let hostname: string;
+  try {
+    hostname = new URL(value).hostname;
+  } catch {
+    offTenant("redirect_uri", "unparseable");
+    return undefined;
+  }
+  if (isAllowedAuthHost(hostname)) return value;
+  offTenant("redirect_uri", hostname);
+  return undefined;
+}
+
+function offTenant(field: string, host: string): void {
+  console.warn(
+    "[wework] auth0 discovery named a host outside wework.com/auth0.com, using the pinned fallback",
+    redact({ field, host, configUrl: AUTH0_CONFIG_URL }),
+  );
 }
 
 /** Strips a scheme, path and trailing slash from a tenant domain. */

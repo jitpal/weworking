@@ -13,6 +13,7 @@ import {
   authUrl,
   FALLBACK_AUTH0_CONFIG,
   fetchAuth0Config,
+  isAllowedAuthHost,
   normaliseConfig,
 } from "../../src/wework/auth/config";
 import auth0Config from "../fixtures/wework/auth0-config.json";
@@ -40,14 +41,14 @@ describe("fetchAuth0Config", () => {
     fetchStub.assertAllConsumed();
   });
 
-  it("picks up a tenant migration", async () => {
+  it("picks up a tenant migration within the pinned hosts", async () => {
     const fetchStub = createFakeFetch([
       {
         method: "GET",
         url: AUTH0_CONFIG_URL,
         response: () =>
           Response.json({
-            domain: "https://login.wework.example/",
+            domain: "https://wework-prod.eu.auth0.com/",
             clientId: "NEW-CLIENT-ID",
             authorizationParams: {
               scope: "openid offline_access",
@@ -59,7 +60,7 @@ describe("fetchAuth0Config", () => {
     ]);
     await expect(fetchAuth0Config(fetchStub)).resolves.toEqual({
       // Scheme and trailing slash stripped.
-      domain: "login.wework.example",
+      domain: "wework-prod.eu.auth0.com",
       clientId: "NEW-CLIENT-ID",
       scope: "openid offline_access",
       audience: "wework",
@@ -67,6 +68,27 @@ describe("fetchAuth0Config", () => {
     });
   });
 
+  it("keeps the pinned domain when discovery names another host", async () => {
+    await withWarnSpy(async (warn) => {
+      const fetchStub = createFakeFetch([
+        {
+          method: "GET",
+          url: AUTH0_CONFIG_URL,
+          response: () =>
+            Response.json({
+              // Where a compromised or spoofed discovery response would send the
+              // member's username and password.
+              domain: "idp.wework.com.evil.example",
+              clientId: "NEW-CLIENT-ID",
+            }),
+        },
+      ]);
+      const config = await fetchAuth0Config(fetchStub);
+      expect(config.domain).toBe(FALLBACK_AUTH0_CONFIG.domain);
+      expect(config.clientId).toBe("NEW-CLIENT-ID");
+      expect(String(warn.mock.calls[0]?.[0])).toContain("outside wework.com/auth0.com");
+    });
+  });
   it("falls back on a non-2xx, and says so in a redacted warning", async () => {
     await withWarnSpy(async (warn) => {
       const fetchStub = createFakeFetch([
@@ -113,6 +135,30 @@ describe("fetchAuth0Config", () => {
   });
 });
 
+describe("isAllowedAuthHost", () => {
+  it.each([
+    "wework.com",
+    "idp.wework.com",
+    "members.wework.com",
+    "WeWork-prod.eu.auth0.com",
+    "tenant.auth0.com",
+  ])("accepts %s", (host) => {
+    expect(isAllowedAuthHost(host)).toBe(true);
+  });
+
+  it.each([
+    "evil.example",
+    "idp.wework.com.evil.example",
+    "notwework.com",
+    "wework.com.attacker.net",
+    "auth0.com.evil.example",
+    "xwework.com",
+    "",
+  ])("rejects %s", (host) => {
+    expect(isAllowedAuthHost(host)).toBe(false);
+  });
+});
+
 describe("normaliseConfig", () => {
   it("fills each missing field from the pinned constants", () => {
     expect(normaliseConfig({ clientId: "ONLY-THIS" })).toEqual({
@@ -130,9 +176,38 @@ describe("normaliseConfig", () => {
     expect(
       normaliseConfig({
         client_id: "SNAKE",
-        authorizationParams: { redirectUri: "https://x.invalid/cb" },
+        authorizationParams: { redirectUri: "https://members.wework.com/cb" },
       }),
-    ).toMatchObject({ clientId: "SNAKE", redirectUri: "https://x.invalid/cb" });
+    ).toMatchObject({ clientId: "SNAKE", redirectUri: "https://members.wework.com/cb" });
+  });
+
+  it("drops an off-tenant redirect_uri, keeping the pinned one", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(
+        normaliseConfig({
+          client_id: "SNAKE",
+          authorizationParams: { redirect_uri: "https://attacker.example/collect" },
+        }),
+      ).toMatchObject({
+        clientId: "SNAKE",
+        redirectUri: FALLBACK_AUTH0_CONFIG.redirectUri,
+      });
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("drops a redirect_uri that is not a URL at all", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(
+        normaliseConfig({ client_id: "SNAKE", authorizationParams: { redirect_uri: "/cb" } }),
+      ).toMatchObject({ redirectUri: FALLBACK_AUTH0_CONFIG.redirectUri });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("returns undefined for something that is not a config at all", () => {

@@ -41,6 +41,7 @@ import {
   authOrigin,
   authUrl,
   fetchAuth0Config,
+  isAllowedAuthHost,
   PASSWORD_REALM_GRANT,
 } from "./config";
 import { CookieJar } from "./cookie-jar";
@@ -393,7 +394,8 @@ interface PendingRequest {
  * @throws {AppError} `UPSTREAM_BLOCKED` for MFA and CAPTCHA pages,
  * `UPSTREAM_AUTH` when the callback reports `error=access_denied`,
  * `UPSTREAM_RATE_LIMITED` after repeated 429s, `UPSTREAM_ERROR` for a missing
- * `Location`, an unparseable hop, or more than `maxRedirects` hops.
+ * `Location`, an unparseable hop, a hop that leaves the WeWork/Auth0 hosts, or more
+ * than `maxRedirects` hops.
  */
 async function followAuthorizeChain(
   ctx: FlowContext,
@@ -520,8 +522,37 @@ async function followAuthorizeChain(
   );
 }
 
+/**
+ * Refuses to issue a hop to anything outside the WeWork/Auth0 allow-list.
+ *
+ * The chain is driven by `Location` headers and HTML form actions from upstream, and
+ * each hop carries the previous URL as `Referer` — hop one's referer contains the
+ * single-use `login_ticket`. A redirect to another origin would hand that to whoever
+ * controls it, so the chain stops instead.
+ */
+function assertAllowedHop(url: string): void {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new AppError(
+      "UPSTREAM_ERROR",
+      "The Auth0 sign-in chain produced a URL that cannot be parsed.",
+      { hint: BLOCKED_HINT },
+    );
+  }
+  if (!isAllowedAuthHost(hostname)) {
+    throw new AppError(
+      "UPSTREAM_ERROR",
+      `The Auth0 sign-in chain tried to continue at ${hostname}, which is neither a wework.com nor an auth0.com host. It was stopped rather than followed.`,
+      { hint: BLOCKED_HINT },
+    );
+  }
+}
+
 /** Issues one hop, carrying the jar's cookies and a browser-shaped header block. */
 async function requestHop(ctx: FlowContext, pending: PendingRequest): Promise<Response> {
+  assertAllowedHop(pending.url);
   const headers: Record<string, string> = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",

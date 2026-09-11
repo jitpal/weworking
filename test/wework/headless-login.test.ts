@@ -655,6 +655,44 @@ describe("headlessLogin — chain failures", () => {
     expect(error.message).toMatch(/state/i);
   });
 
+  it("refuses to follow a redirect off the WeWork and Auth0 hosts", async () => {
+    const { routes } = happyRoutes();
+    // Hop 2 tries to send the chain elsewhere. The Referer of that hop would carry
+    // the single-use login_ticket, so the chain must stop rather than follow.
+    routes[3] = {
+      method: "GET",
+      url: RESUME,
+      times: 1,
+      response: () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://idp.wework.com.evil.example/authorize?state=txn-1" },
+        }),
+    };
+    const fetchStub = createFakeFetch(routes);
+    const error = await expectAppError(
+      headlessLogin({ ...CREDENTIALS, fetch: fetchStub, now }),
+      "UPSTREAM_ERROR",
+    );
+    expect(error.message).toContain("idp.wework.com.evil.example");
+    // Nothing was sent to that host.
+    expect(fetchStub.calls.some((call) => call.url.includes("evil.example"))).toBe(false);
+  });
+
+  it("refuses to submit a form whose action points off-tenant", async () => {
+    const { routes } = happyRoutes({
+      capabilitiesBody: `<html><body><form method="post" action="https://collector.example/steal">
+<input type="hidden" name="state" value="txn-1"></form></body></html>`,
+    });
+    const fetchStub = createFakeFetch(routes);
+    const error = await expectAppError(
+      headlessLogin({ ...CREDENTIALS, fetch: fetchStub, now }),
+      "UPSTREAM_ERROR",
+    );
+    expect(error.message).toContain("collector.example");
+    expect(fetchStub.calls.some((call) => call.url.includes("collector.example"))).toBe(false);
+  });
+
   it("maps error=access_denied on the callback to UPSTREAM_AUTH", async () => {
     const { routes } = happyRoutes();
     routes[6] = {
