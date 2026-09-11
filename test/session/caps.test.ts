@@ -343,7 +343,7 @@ describe("ledger transitions", () => {
     await expect(stub.capsRemaining(MON)).resolves.toEqual({ day: 0, week: 4 });
   });
 
-  it("cancelLedger frees the day again", async () => {
+  it("cancelLedger records the cancellation but keeps the slot spent", async () => {
     const stub = freshSession("ledger-cancel");
     await stub.reserveBooking({
       bookingKey: "key-1",
@@ -355,16 +355,58 @@ describe("ledger transitions", () => {
     await stub.confirmBooking({ bookingKey: "key-1", bookingId: "WW-123" });
     await stub.cancelLedger({ bookingId: "WW-123" });
 
-    await expect(stub.capsRemaining(MON)).resolves.toEqual({ day: 1, week: 5 });
     await expect(
-      stub.reserveBooking({
-        bookingKey: "key-2",
-        date: MON,
-        credits: 2,
-        actor: "a",
-        dryRun: false,
-      }),
-    ).resolves.toMatchObject({ ok: true });
+      queryCount(stub, "SELECT COUNT(*) AS n FROM bookings_ledger WHERE status = 'cancelled'"),
+    ).resolves.toBe(1);
+    // The caps count bookings made, not bookings held.
+    await expect(stub.capsRemaining(MON)).resolves.toEqual({ day: 0, week: 4 });
+  });
+
+  it("refuses to let book-cancel-book loop past the caps", async () => {
+    const stub = freshSession("ledger-cancel-loop");
+    await patchConfig(stub, { maxBookingsPerDay: 1, maxBookingsPerWeek: 2 });
+
+    for (const [key, id] of [
+      ["key-1", "WW-1"],
+      ["key-2", "WW-2"],
+    ] as const) {
+      await expect(
+        stub.reserveBooking({ bookingKey: key, date: MON, credits: 1, actor: "a", dryRun: false }),
+      ).resolves.toMatchObject({ ok: true });
+      await stub.confirmBooking({ bookingKey: key, bookingId: id });
+      await stub.cancelLedger({ bookingId: id });
+      // Each cancellation would have handed the day back before this was fixed.
+      await patchConfig(stub, { maxBookingsPerDay: 2, maxBookingsPerWeek: 2 });
+    }
+
+    const refused = await stub.reserveBooking({
+      bookingKey: "key-3",
+      date: WED,
+      credits: 1,
+      actor: "a",
+      dryRun: false,
+    });
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.code).toBe("CAP_EXCEEDED");
+    expect(refused.message).toContain("MAX_BOOKINGS_PER_WEEK=2");
+    expect(refused.message).toContain("Cancelled bookings still count");
+  });
+
+  it("still forgets a reservation that was cancelled before it was ever confirmed", async () => {
+    // releaseBooking is the path for a failed booking; a row that never reached
+    // confirmed must not keep holding a slot.
+    const stub = freshSession("ledger-cancel-unconfirmed");
+    const start = Date.now();
+    await setClock(stub, start);
+    await stub.reserveBooking({
+      bookingKey: "key-1",
+      date: MON,
+      credits: 1,
+      actor: "a",
+      dryRun: false,
+    });
+    await setClock(stub, start + STALE_RESERVATION_MS + 1_000);
+    await expect(stub.capsRemaining(MON)).resolves.toEqual({ day: 1, week: 5 });
   });
 
   it("ignores a reservation nobody confirmed within ten minutes", async () => {

@@ -576,6 +576,7 @@ describe("createBooking", () => {
     } catch (err) {
       expect(isAppError(err) && err.code).toBe("CAP_EXCEEDED");
       expect(isAppError(err) && err.details).toEqual({ capsRemaining: { day: 0, week: 5 } });
+      expect(isAppError(err) && err.hint).toContain("Cancelled bookings still count");
     }
     expect(harness.api.calls.filter((c) => c.method === "book")).toHaveLength(0);
     expect(harness.session.audits).toContainEqual({
@@ -788,7 +789,7 @@ describe("cancelBooking", () => {
     harness = createHarness({ apiScript: { bookings: [makeBooking()] } });
   });
 
-  it("cancels, frees the ledger and reports the refund", async () => {
+  it("cancels, records it in the ledger and reports the refund", async () => {
     const result = await harness.service.cancelBooking({ bookingId: "BK-1" }, READ_WRITE_ACTOR);
     expect(result).toMatchObject({ bookingId: "BK-1", status: "cancelled", creditsRefunded: 1 });
     expect(result.summary).toContain("1 Poultry");
@@ -798,6 +799,25 @@ describe("cancelBooking", () => {
       tool: "cancel_booking",
       outcome: "ok",
       dryRun: false,
+    });
+  });
+
+  it("does not hand the day back, so book-cancel-book cannot loop past the caps", async () => {
+    const booked = createHarness({
+      apiScript: { bookings: [makeBooking()] },
+      sessionScript: { maxPerDay: 1, maxPerWeek: 5 },
+    });
+    const quote = await firstQuote(booked);
+    await booked.service.createBooking({ quote }, READ_WRITE_ACTOR);
+    await expect(booked.session.session.capsRemaining("2026-09-21")).resolves.toEqual({
+      day: 0,
+      week: 4,
+    });
+
+    await booked.service.cancelBooking({ bookingId: "BK-1" }, READ_WRITE_ACTOR);
+    await expect(booked.session.session.capsRemaining("2026-09-21")).resolves.toEqual({
+      day: 0,
+      week: 4,
     });
   });
 

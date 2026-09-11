@@ -576,7 +576,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
         error: reservation.code,
       });
       throw new AppError("CAP_EXCEEDED", reservation.message, {
-        hint: `A configured booking cap is already used up (${reservation.capsRemaining.day} left today, ${reservation.capsRemaining.week} this week). Tell the user the limit instead of retrying.`,
+        hint: `A configured booking cap is already used up (${reservation.capsRemaining.day} left today, ${reservation.capsRemaining.week} this week). Cancelled bookings still count towards the day and week limits, so cancelling one will not free a slot. Tell the user the limit instead of retrying.`,
         details: { capsRemaining: reservation.capsRemaining },
       });
     }
@@ -735,7 +735,8 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
       throw err;
     }
 
-    // Frees the day against the caps, so the user can rebook after cancelling.
+    // Records the cancellation in the ledger. It deliberately does not free the day
+    // or the week against the caps: those count bookings made, not bookings held.
     await safely(() => session.cancelLedger({ bookingId }));
     const result: CancelBookingResult = {
       bookingId,

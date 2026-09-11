@@ -207,7 +207,7 @@ Quotes live ten minutes. Expired means search again and book with the fresh quot
 
 ### `CAP_EXCEEDED`
 
-The daily or weekly cap, or `MAX_CREDITS_PER_BOOKING`, or `MAX_CASH_PER_BOOKING`, would be exceeded. The error states which. Raise the relevant var in `wrangler.jsonc` and redeploy if that is what you want.
+The daily or weekly cap, or `MAX_CREDITS_PER_BOOKING`, or `MAX_CASH_PER_BOOKING`, would be exceeded. The error states which. Raise the relevant var in `wrangler.jsonc` and redeploy if that is what you want. Cancelling a booking does not give its day or week slot back: the counters record bookings made, so that an agent cannot cancel and rebook its way around them.
 
 ### Deploy fails on the Durable Object migration
 

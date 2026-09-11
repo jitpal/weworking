@@ -67,7 +67,7 @@ No parameters. Call this first if you do not know whether the deployment is conn
 
 `whoami` never returns a WeWork token. If `session.state` is `none` or `expired`, stop and tell the user to reconnect.
 
-`caps` is what the deployment is configured to allow and `capsRemaining` is what is left today and this ISO week. The defaults are one booking per day and seven per week, with `maxCreditsPerBooking: 0` and `maxCashPerBooking: 0`.
+`caps` is what the deployment is configured to allow and `capsRemaining` is what is left today and this ISO week. The day and week counters record bookings *made*: cancelling a booking does not give its slot back, so an agent cannot cancel and rebook its way past them. The defaults are one booking per day and seven per week, with `maxCreditsPerBooking: 0` and `maxCashPerBooking: 0`.
 
 The two money caps are separate because the two kinds of desk cost different things. An All Access desk is free and costs credits at most, while a pay-as-you-go desk costs money and no credits at all, so a credit ceiling on its own would leave cash bookings unbounded. Both default to zero; a self-hoster on a cash plan raises `MAX_CASH_PER_BOOKING` to whatever they are willing to let an agent spend. `maxCashPerBooking` is in the building's own currency and may have decimals. An operator who sets either var to `"unlimited"` reports `-1` for it here.
 
@@ -306,7 +306,7 @@ Every failure, on both front doors, uses one envelope:
 | `UPSTREAM_ERROR` | 502 | upstream error or unparseable response | retry once for reads; never auto-retry a booking. Report and stop |
 | `QUOTE_INVALID` | 400 | signature failed, wrong deployment, or mangled quote | run `search_availability` again and use a fresh quote verbatim |
 | `QUOTE_EXPIRED` | 409 | quote older than ten minutes | search again and book promptly |
-| `CAP_EXCEEDED` | 429 | daily/weekly booking cap, credit ceiling or cash ceiling reached | stop. Explain the cap and that the user can raise it in `wrangler.jsonc`. Do not look for a workaround |
+| `CAP_EXCEEDED` | 429 | daily/weekly booking cap, credit ceiling or cash ceiling reached | stop. Explain the cap and that the user can raise it in `wrangler.jsonc`. Cancelling an earlier booking does not free a slot, so do not offer that as a workaround |
 | `NOT_AVAILABLE` | 409 | the space was taken between the search and the booking | search again and offer the user the new options |
 | `BOOKING_REFUSED` | 409 | WeWork accepted the request but refused the booking (no credits, policy, overlap) | report the reason. Nothing was charged. Do not retry blindly |
 | `NOT_FOUND` | 404 | unknown booking id or location id | re-list and use an id from the result |

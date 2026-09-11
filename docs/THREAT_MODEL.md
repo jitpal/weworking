@@ -62,6 +62,8 @@ The agent host (Claude Code, Cursor, claude.ai) sits outside boundary 1. It is t
 
 So the blast radius of a leaked `write` credential is bounded in money by the caps: at the defaults, one booking per day, seven per week, no credits spent and no cash spent unless a cap is raised. That is the point of the caps. They exist for a misbehaving or compromised agent, not for the user's convenience.
 
+The day and week counters are a ledger of bookings **made**. A booking that is later cancelled still counts, so book-cancel-book is not a loop through the caps, and a cancellation after the building's deadline (which forfeits the credits) cannot buy another attempt. Only a reservation that never reached WeWork stops counting, ten minutes after it was taken.
+
 Money reaches WeWork by two routes, so there are two ceilings. An All Access desk is free and costs credits at most, which `MAX_CREDITS_PER_BOOKING` bounds; a pay-as-you-go desk costs money and no credits at all, which `MAX_CASH_PER_BOOKING` bounds. Both default to `"0"`, so a fresh deployment can book only what the membership already pays for. A self-hoster on a cash plan raises `MAX_CASH_PER_BOOKING` to what they are willing to let an agent spend. Both are checked in the booking service and again in the Durable Object, which is the authority: the service check exists to give the agent a useful error, not to be the gate.
 
 Minting keys is a capability of the **admin password**, not of any agent credential: `/admin/keys` sits behind the same browser sign-in as the rest of `/admin/*`, and every mint and revocation is written to the audit log (with the key's name and scopes, never the key).

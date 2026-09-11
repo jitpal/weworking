@@ -19,7 +19,8 @@ WeWork's API is picky about places and clocks, and most of the bugs found in the
 10. **Times are snapped to the 30-minute grid** before anything is sent: starts floor, ends ceil. WeWork rejects anything else.
 11. **Requests to WeWork carry UTC instants** (`...T07:30:00Z`) converted from building-local time on the specific date, so daylight-saving transitions are handled by the zone database, not by arithmetic on a stored offset.
 12. **WeWork's bookings list is a trap.** Its times are the building's local wall clock with a `Z` stamped on the end. They are re-anchored in the building's zone, never converted. Cancel requests send that local wall clock back without a `Z`.
-13. **Quotes are short-lived** (ten minutes) and expire on the UTC clock. An expired quote is refused; the agent searches again.
+13. **Booking caps are counted on the building-independent UTC day and ISO week**, and they count bookings made rather than bookings held: a cancelled booking still counts.
+14. **Quotes are short-lived** (ten minutes) and expire on the UTC clock. An expired quote is refused; the agent searches again.
 
 ## What this means for an agent
 

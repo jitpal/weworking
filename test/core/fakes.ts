@@ -345,9 +345,9 @@ export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
       released.push(bookingKey);
     },
     async cancelLedger({ bookingId }) {
+      // Mirrors the Durable Object: a cancelled booking still counts towards the
+      // caps, so cancelling does not give the day or the week back.
       cancelled.push(bookingId);
-      usedToday = Math.max(0, usedToday - 1);
-      usedThisWeek = Math.max(0, usedThisWeek - 1);
     },
     async capsRemaining() {
       return caps();

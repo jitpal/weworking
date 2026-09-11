@@ -64,8 +64,16 @@ export const API_KEY_LAST_USED_THROTTLE_MS = 60 * 1000;
 /** Longest an API key name may be. Names are labels for the audit log, not prose. */
 export const API_KEY_NAME_MAX = 64;
 
-/** Ledger statuses that consume a cap slot. */
-const ACTIVE_STATUSES = "('reserved','confirmed')";
+/**
+ * Ledger statuses that consume a cap slot.
+ *
+ * `cancelled` is in the list on purpose. The caps count bookings *made*, not
+ * bookings currently held: if cancelling gave the slot back, book-cancel-book would
+ * be an unbounded loop through them, and a cancellation after the building's
+ * deadline forfeits the credits anyway. The `confirmed_at IS NOT NULL` test in
+ * {@link WeWorkSession.#counts} is what keeps an abandoned reservation out.
+ */
+const COUNTED_STATUSES = "('reserved','confirmed','cancelled')";
 
 /**
  * A JSON value, unrolled to a fixed depth instead of being defined recursively.
@@ -323,7 +331,7 @@ export class WeWorkSession extends DurableObject<Env> {
       return {
         ok: false,
         code: "CAP_EXCEEDED",
-        message: `The daily booking cap (MAX_BOOKINGS_PER_DAY=${caps.maxBookingsPerDay}) is already used for ${date}.`,
+        message: `The daily booking cap (MAX_BOOKINGS_PER_DAY=${caps.maxBookingsPerDay}) is already used for ${date}. Cancelled bookings still count towards it.`,
         capsRemaining: remaining(caps, counts),
       };
     }
@@ -331,7 +339,7 @@ export class WeWorkSession extends DurableObject<Env> {
       return {
         ok: false,
         code: "CAP_EXCEEDED",
-        message: `The weekly booking cap (MAX_BOOKINGS_PER_WEEK=${caps.maxBookingsPerWeek}) is already used for week ${isoWeekKey(date)}.`,
+        message: `The weekly booking cap (MAX_BOOKINGS_PER_WEEK=${caps.maxBookingsPerWeek}) is already used for week ${isoWeekKey(date)}. Cancelled bookings still count towards it.`,
         capsRemaining: remaining(caps, counts),
       };
     }
@@ -384,7 +392,12 @@ export class WeWorkSession extends DurableObject<Env> {
     );
   }
 
-  /** Marks a confirmed booking cancelled, which frees its day and week slot. */
+  /**
+   * Marks a confirmed booking cancelled.
+   *
+   * This does **not** free its day or week slot: see {@link COUNTED_STATUSES}. The
+   * row is updated so the ledger and the audit trail agree with WeWork.
+   */
   async cancelLedger(args: { bookingId: string }): Promise<void> {
     this.#sql.exec(
       "UPDATE bookings_ledger SET status = 'cancelled' WHERE booking_id = ?",
@@ -868,10 +881,18 @@ export class WeWorkSession extends DurableObject<Env> {
   }
 
   /** Cap usage for a date and its ISO week, ignoring dry runs and stale reservations. */
+  /**
+   * Bookings counted against the caps for `date` and its ISO week.
+   *
+   * A row counts once it has ever been confirmed, cancelled or not, so cancelling
+   * does not hand the slot back. A reservation that was never confirmed counts only
+   * while it is fresh, so a crashed booking stops holding a slot after
+   * {@link STALE_RESERVATION_MS}.
+   */
   #counts(date: string, now: number, excludeKey = ""): CapsRemaining {
     const cutoff = now - STALE_RESERVATION_MS;
-    const where = `dry_run = 0 AND status IN ${ACTIVE_STATUSES}
-        AND (status = 'confirmed' OR created_at >= ?)
+    const where = `dry_run = 0 AND status IN ${COUNTED_STATUSES}
+        AND (confirmed_at IS NOT NULL OR (status = 'reserved' AND created_at >= ?))
         AND booking_key <> ?`;
     const day = this.#count(
       `SELECT COUNT(*) AS n FROM bookings_ledger WHERE date = ? AND ${where}`,
