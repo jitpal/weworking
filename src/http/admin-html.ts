@@ -32,43 +32,48 @@ export function escapeHtml(value: unknown): string {
 }
 
 const STYLE = `
-:root { color-scheme: light dark; --fg: #15181d; --muted: #5d6570; --bg: #fbfbfc; --card: #ffffff; --line: #e2e5ea; --accent: #1d4ed8; --warn: #8a5300; --warn-bg: #fff6e5; --ok: #0f6b3f; --ok-bg: #e8f6ee; --err: #a1212d; --err-bg: #fdecee; }
-@media (prefers-color-scheme: dark) {
-  :root { --fg: #e8eaee; --muted: #9aa3b0; --bg: #14161a; --card: #1c1f25; --line: #2c313a; --accent: #8fb0ff; --warn: #f0c070; --warn-bg: #2d2414; --ok: #79d3a3; --ok-bg: #14291d; --err: #ff9aa4; --err-bg: #2c1619; }
-}
+:root { color-scheme: light dark; --fg: #000; --bg: #fff; --muted: #555; --line: #000; --soft: #ddd; }
+@media (prefers-color-scheme: dark) { :root { --fg: #fff; --bg: #000; --muted: #999; --line: #fff; --soft: #333; } }
 * { box-sizing: border-box; }
-body { margin: 0; padding: 2rem 1rem 4rem; background: var(--bg); color: var(--fg); font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-main { max-width: 46rem; margin: 0 auto; }
-h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
-h2 { font-size: 1.05rem; margin: 1.8rem 0 .5rem; }
-h3 { font-size: .95rem; margin: 1.2rem 0 .4rem; }
-p, li { margin: .5rem 0; }
-a { color: var(--accent); }
-code, pre, textarea, input[type=password], input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: .05rem .3rem; font-size: .85em; }
-pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .8rem; overflow-x: auto; font-size: .8rem; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
+html { background: var(--bg); color: var(--fg); }
+body { margin: 0; padding: clamp(1.5rem, 6vw, 5rem); font: 16px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+main { max-width: 40rem; }
+.wordmark { display: inline-block; font-size: 1rem; letter-spacing: -0.02em; text-decoration: none; color: inherit; margin-bottom: 2.5rem; }
+.wordmark:hover { text-decoration: underline; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); font-weight: 500; letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 0.75rem; }
+h2 { font-size: 1rem; font-weight: 500; margin: 2.5rem 0 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--soft); }
+h3 { font-size: 1rem; font-weight: 500; margin: 1.5rem 0 0.5rem; }
+p, li { margin: 0 0 1rem; }
+ul, ol { padding-left: 1.25rem; }
+a { color: inherit; text-decoration: underline; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover, a:focus-visible { text-decoration-thickness: 2px; outline: none; }
+code { font: inherit; }
+pre { margin: 0 0 1rem; padding: 0.75rem 0; border-top: 1px solid var(--soft); border-bottom: 1px solid var(--soft); overflow-x: auto; font-size: 0.9rem; line-height: 1.5; }
+.card { margin: 0 0 1.5rem; }
 .muted { color: var(--muted); }
-.small { font-size: .85rem; }
-label { display: block; font-weight: 600; margin: .9rem 0 .3rem; }
-input[type=password], input[type=text], textarea { width: 100%; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: .9rem; }
+.small { font-size: 0.85rem; }
+label { display: block; margin: 1.25rem 0 0.4rem; }
+input[type=text], input[type=password], textarea { display: block; width: 100%; padding: 0.6rem 0.7rem; border: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; font: inherit; }
+input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 textarea { min-height: 9rem; }
-button { margin-top: 1rem; padding: .55rem 1.1rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
-.scopes { display: flex; flex-wrap: wrap; gap: .9rem; margin: .4rem 0; }
-.scopes label { display: flex; gap: .35rem; align-items: center; font-weight: 400; margin: 0; }
-table { border-collapse: collapse; width: 100%; font-size: .84rem; }
-th, td { border-bottom: 1px solid var(--line); padding: .35rem .5rem; text-align: left; vertical-align: top; }
-th { color: var(--muted); font-weight: 600; white-space: nowrap; }
-.banner { border-radius: 8px; padding: .6rem .8rem; margin: 1rem 0; font-size: .9rem; }
-.banner.ok { background: var(--ok-bg); color: var(--ok); }
-.banner.warn { background: var(--warn-bg); color: var(--warn); }
-.banner.err { background: var(--err-bg); color: var(--err); }
-.kv { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: .3rem .9rem; font-size: .9rem; }
+button, .button { display: inline-block; margin-top: 1.25rem; padding: 0.6rem 1.1rem; border: 1px solid var(--line); border-radius: 0; background: var(--fg); color: var(--bg); font: inherit; cursor: pointer; text-decoration: none; }
+button:hover { background: transparent; color: var(--fg); }
+button.quiet { background: transparent; color: var(--fg); margin-top: 0; padding: 0.3rem 0.7rem; font-size: 0.85rem; }
+.scopes { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0.4rem 0; }
+.scopes label { display: flex; gap: 0.5rem; align-items: center; margin: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 0 0 1rem; }
+th, td { border-bottom: 1px solid var(--soft); padding: 0.5rem 0.75rem 0.5rem 0; text-align: left; vertical-align: top; }
+th { font-weight: 500; color: var(--muted); white-space: nowrap; }
+.banner { margin: 0 0 1.5rem; padding: 0.6rem 0 0.6rem 0.9rem; border-left: 3px solid var(--line); }
+.banner.ok::before { content: "ok: "; color: var(--muted); }
+.banner.warn::before { content: "note: "; color: var(--muted); }
+.banner.err::before { content: "error: "; color: var(--muted); }
+.kv { display: grid; grid-template-columns: minmax(9rem, max-content) 1fr; gap: 0.35rem 1.25rem; margin: 0 0 1.5rem; }
 .kv div:nth-child(odd) { color: var(--muted); }
-nav { font-size: .85rem; margin-bottom: 1.5rem; }
-nav a { margin-right: .9rem; }
-footer { margin-top: 2.5rem; font-size: .78rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: .8rem; }
-.bookmarklet { display: inline-block; padding: .4rem .8rem; border: 1px dashed var(--accent); border-radius: 8px; font-weight: 600; text-decoration: none; }
+nav { font-size: 0.9rem; margin: 0 0 2rem; }
+nav a { margin-right: 1.25rem; }
+footer { max-width: 40rem; margin-top: 4rem; font-size: 0.85rem; color: var(--muted); }
+.bookmarklet { display: inline-block; padding: 0.4rem 0.8rem; border: 1px dashed var(--line); text-decoration: none; }
 `.trim();
 
 /** Everything a page needs besides its body. */
@@ -100,16 +105,17 @@ export function page(options: PageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${escapeHtml(CONTENT_SECURITY_POLICY)}">
 <meta name="robots" content="noindex, nofollow">
-<title>${escapeHtml(options.title)} — weworking</title>
+<title>${escapeHtml(options.title)} - weworking</title>
 <style>${STYLE}</style>
 </head>
 <body>
 <main>
+<a class="wordmark" href="/">weworking</a>
 ${nav}
 <h1>${escapeHtml(options.heading ?? options.title)}</h1>
 ${subtitle}
 ${options.body}
-<footer>weworking — unofficial, not affiliated with or endorsed by WeWork. It spends your credits with your own session.</footer>
+<footer>Unofficial. Not affiliated with WeWork. Bookings made through this deployment spend the operator's own credits.</footer>
 </main>
 </body>
 </html>`;
