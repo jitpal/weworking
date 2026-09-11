@@ -318,17 +318,18 @@ describe("scope helpers", () => {
 });
 
 describe("landingRoutes", () => {
-  it("serves a tiny landing page with the disclaimer and the expected links", async () => {
+  it("serves a minimal landing page: name, disclaimer, repo link, operator sign-in", async () => {
     const response = await landingRoutes().request("/", { headers: HTML_HEADERS }, fakeEnv());
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("weworking");
+    expect(html).toContain("<h1>weworking</h1>");
     expect(html).toContain("Unofficial");
-    expect(html).toContain('href="/healthz"');
+    expect(html).toContain('href="https://github.com/jitpal/weworking"');
     expect(html).toContain('href="/admin"');
-    expect(html).toContain('href="/api/openapi.json"');
-    expect(html).toContain("/mcp");
-    expect(html).toContain("docs/SELF_HOSTING.md");
     expect(html).toContain("default-src &#39;none&#39;");
+    // Nothing that belongs in the docs is repeated here.
+    expect(html).not.toContain("docs/");
+    expect(html).not.toContain("/api/openapi.json");
+    expect(html).not.toContain("/healthz");
   });
 });

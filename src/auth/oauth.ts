@@ -33,7 +33,13 @@ import OAuthProvider, {
 import { Hono } from "hono";
 import type { Scope } from "../core/types";
 import type { Env } from "../env";
-import { banner, escapeHtml, htmlResponse, page } from "../http/admin-html";
+import {
+  banner,
+  CONTENT_SECURITY_POLICY,
+  escapeHtml,
+  htmlResponse,
+  page,
+} from "../http/admin-html";
 import { redact } from "../redact";
 import { checkAdminPassword, csrfHeaders, issueCsrfToken, verifyCsrfToken } from "./admin-session";
 import { base64UrlDecode, base64UrlEncode, signValue, verifyValue } from "./sign";
@@ -332,6 +338,9 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
  * `src/index.ts` can mount the public root page without implying it is part of the
  * OAuth flow, and so a deployment behind a custom front page can leave it out.
  */
+/** Where the landing page sends people for docs; forks change this. */
+const REPO_URL = "https://github.com/jitpal/weworking";
+
 export function landingRoutes(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
   app.get("/", () => htmlResponse(landingPage()));
@@ -543,30 +552,37 @@ function adminPasswordMissingPage(): string {
 }
 
 function landingPage(): string {
-  return page({
-    title: "weworking",
-    heading: "weworking",
-    subtitle: "Unofficial WeWork hot-desk search and booking for AI agents.",
-    body: `
-${banner(
-  "warn",
-  "Unofficial and unaffiliated: this software drives WeWork's private member API with the operator's own session, spends real credits, and may violate WeWork's terms of service.",
-)}
-<div class="card">
-<h2>Endpoints</h2>
-<ul>
-<li><code>POST /mcp</code> — MCP (Streamable HTTP). OAuth 2.1 or a static bearer token.</li>
-<li><code>/api/*</code> — the REST mirror. <a href="/api/openapi.json">OpenAPI document</a>.</li>
-<li><a href="/healthz">/healthz</a> — public status (presence booleans only, no secrets).</li>
-<li><a href="/admin">/admin</a> — operator pages: connect a WeWork session, audit log.</li>
-</ul>
-</div>
-<div class="card">
-<h2>Documentation</h2>
-<p class="small">Ships with the source: <code>docs/SELF_HOSTING.md</code> (deploy, secrets, troubleshooting),
-<code>docs/CLIENTS.md</code> (Claude Code, Claude Desktop, claude.ai, ChatGPT, Cursor, curl),
-<code>docs/API.md</code> and <code>docs/THREAT_MODEL.md</code>.</p>
-</div>
-<p class="small muted">One deployment, one WeWork account. If you did not deploy this, there is nothing here for you.</p>`,
-  });
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${escapeHtml(CONTENT_SECURITY_POLICY)}">
+<meta name="robots" content="noindex, nofollow">
+<title>weworking</title>
+<style>
+html { background: #fff; color: #000; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; padding: clamp(1.5rem, 6vw, 5rem); font: 17px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+main { flex: 1; max-width: 34rem; }
+h1 { font-size: clamp(2.6rem, 9vw, 5rem); font-weight: 500; letter-spacing: -0.04em; line-height: 1; margin: 0 0 1.5rem; }
+p { margin: 0 0 1.25rem; }
+a { color: inherit; text-decoration: underline; text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover, a:focus-visible { text-decoration-thickness: 2px; outline: none; }
+footer { max-width: 34rem; font-size: 0.85rem; color: #555; margin-top: 3rem; }
+@media (prefers-color-scheme: dark) {
+  html { background: #000; color: #fff; }
+  footer { color: #999; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>weworking</h1>
+<p>Lets an AI agent search and book WeWork hot desks on one member account. Runs on Cloudflare Workers as an MCP server, self-hosted by whoever deployed it.</p>
+<p><a href="${escapeHtml(REPO_URL)}">Source and setup instructions</a></p>
+<p><a href="/admin">Operator sign in</a></p>
+</main>
+<footer>Unofficial. Not affiliated with WeWork. Bookings made through this deployment spend the operator's own credits.</footer>
+</body>
+</html>`;
 }
