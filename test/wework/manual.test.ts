@@ -66,7 +66,10 @@ describe("decodeJwtPayload", () => {
   });
 
   it("rejects a JWT whose payload is a JSON array", () => {
-    expectAppError(() => decodeJwtPayload(`aaa.${base64UrlEncode(new TextEncoder().encode("[1]"))}.s`), "VALIDATION");
+    expectAppError(
+      () => decodeJwtPayload(`aaa.${base64UrlEncode(new TextEncoder().encode("[1]"))}.s`),
+      "VALIDATION",
+    );
   });
 });
 
@@ -198,7 +201,10 @@ describe("parseManualSession — accepted shapes", () => {
   });
 
   it("omits refreshToken rather than setting it to an empty string", () => {
-    const session = parseManualSession({ access_token: FIXTURE_ACCESS_TOKEN, refresh_token: "" }, now);
+    const session = parseManualSession(
+      { access_token: FIXTURE_ACCESS_TOKEN, refresh_token: "" },
+      now,
+    );
     expect("refreshToken" in session).toBe(false);
   });
 });

@@ -27,11 +27,11 @@ import {
   RETRY_AFTER_CAP_MS,
 } from "../../src/wework/auth/headless-login";
 import { createCodeChallenge } from "../../src/wework/auth/pkce";
-import { createFakeFetch, type FakeRoute } from "../helpers/fake-fetch";
 import auth0Config from "../fixtures/wework/auth0-config.json";
 import coAuthBlocked from "../fixtures/wework/co-authenticate-blocked.json";
 import coAuthOk from "../fixtures/wework/co-authenticate-ok.json";
 import tokenResponse from "../fixtures/wework/token-response.json";
+import { createFakeFetch, type FakeRoute } from "../helpers/fake-fetch";
 import {
   FIXTURE_ACCESS_TOKEN,
   FIXTURE_EXPIRES_AT_MS,
@@ -54,7 +54,10 @@ const CALLBACK = "https://members.wework.com/workplaceone/api/auth0/v2/callback"
 const CLIENT_ID = FALLBACK_AUTH0_CONFIG.clientId;
 const AUTH_CODE = "FAKE-AUTHORIZATION-CODE-0123456789";
 
-const CREDENTIALS = { username: "not-a-real-member@example.invalid", password: "not-a-real-password" };
+const CREDENTIALS = {
+  username: "not-a-real-member@example.invalid",
+  password: "not-a-real-password",
+};
 
 /** The Auth0 capabilities page, with `js-available` deliberately pre-set to false. */
 const CAPABILITIES_HTML = `<!DOCTYPE html><html><head><title>Checking your browser</title></head>
@@ -176,9 +179,7 @@ function happyRoutes(overrides: { capabilitiesBody?: string } = {}): {
 /** Reads the seeded Auth0 transaction back out of a recorded `Cookie` header. */
 function transactionFromCookieHeader(cookie: string | undefined): Record<string, unknown> {
   if (!cookie) throw new Error("expected a Cookie header");
-  const entry = cookie
-    .split("; ")
-    .find((pair) => pair.startsWith(`a0.spajs.txs.${CLIENT_ID}=`));
+  const entry = cookie.split("; ").find((pair) => pair.startsWith(`a0.spajs.txs.${CLIENT_ID}=`));
   if (!entry) throw new Error(`no transaction cookie in: ${cookie}`);
   return JSON.parse(decodeURIComponent(entry.slice(entry.indexOf("=") + 1)));
 }
@@ -391,9 +392,9 @@ describe("headlessLogin — discovery fallback", () => {
         response: () => new Response("upstream down", { status: 503 }),
       };
       const fetchStub = createFakeFetch(routes);
-      await expect(
-        headlessLogin({ ...CREDENTIALS, fetch: fetchStub, now }),
-      ).resolves.toMatchObject({ source: "login" });
+      await expect(headlessLogin({ ...CREDENTIALS, fetch: fetchStub, now })).resolves.toMatchObject(
+        { source: "login" },
+      );
 
       expect(fetchStub.callsMatching(CO_AUTH)).toHaveLength(1);
       expect(warn).toHaveBeenCalled();
@@ -519,9 +520,12 @@ describe("headlessLogin — credentials and rate limits", () => {
       url: CO_AUTH,
       times: 1,
       response: () =>
-        new Response(JSON.stringify({ error: "invalid_grant", error_description: "Wrong email or password." }), {
-          status: 401,
-        }),
+        new Response(
+          JSON.stringify({ error: "invalid_grant", error_description: "Wrong email or password." }),
+          {
+            status: 401,
+          },
+        ),
     };
     const error = await expectAppError(
       headlessLogin({ ...CREDENTIALS, fetch: createFakeFetch(routes), now }),
@@ -533,17 +537,22 @@ describe("headlessLogin — credentials and rate limits", () => {
   it("retries a 429 on /co/authenticate, honouring Retry-After", async () => {
     const { routes } = happyRoutes();
     const { waits, sleep } = recordingSleep();
-    routes.splice(1, 1, {
-      method: "POST",
-      url: CO_AUTH,
-      times: 1,
-      response: () => new Response("slow down", { status: 429, headers: { "retry-after": "2" } }),
-    }, {
-      method: "POST",
-      url: CO_AUTH,
-      times: 1,
-      response: () => Response.json(coAuthOk),
-    });
+    routes.splice(
+      1,
+      1,
+      {
+        method: "POST",
+        url: CO_AUTH,
+        times: 1,
+        response: () => new Response("slow down", { status: 429, headers: { "retry-after": "2" } }),
+      },
+      {
+        method: "POST",
+        url: CO_AUTH,
+        times: 1,
+        response: () => Response.json(coAuthOk),
+      },
+    );
 
     const fetchStub = createFakeFetch(routes);
     await expect(

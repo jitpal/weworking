@@ -23,23 +23,24 @@ import {
   spaceIdByAccountType,
   WeWorkClient,
 } from "../../src/wework/client";
-import { mapBooking, mapWorkspace } from "../../src/wework/mappers";
-import { createFakeFetch, type FakeRoute } from "../helpers/fake-fetch";
 import bookingRefused from "../fixtures/wework/booking-refused.json";
 import bookingSuccess from "../fixtures/wework/booking-success.json";
 import cityDetails from "../fixtures/wework/city-details.json";
 import errorEnvelope from "../fixtures/wework/error-envelope.json";
+import spacesFixture from "../fixtures/wework/get-spaces.json";
 import inventoryDetails from "../fixtures/wework/inventory-details.json";
 import inventoryDetailsEmpty from "../fixtures/wework/inventory-details-empty.json";
 import locationsByGeo from "../fixtures/wework/locations-by-geo.json";
 import monthlyCredits from "../fixtures/wework/monthly-credits.json";
 import profile from "../fixtures/wework/profile.json";
 import quoteFixture from "../fixtures/wework/quote.json";
-import spacesFixture from "../fixtures/wework/get-spaces.json";
 import upcoming from "../fixtures/wework/upcoming-bookings.json";
+import { createFakeFetch, type FakeRoute } from "../helpers/fake-fetch";
 import {
   FIXTURE_ACCESS_TOKEN,
   FIXTURE_USER_UUID,
+  fixtureBooking,
+  fixtureSpace,
   INVENTORY_1,
   INVENTORY_2,
   jsonBody,
@@ -48,10 +49,10 @@ import {
   MEMBERS_API,
   now,
   queryOf,
-  sampleQuote,
-  seededTokenStore,
   SPACE_1,
   SPACE_2,
+  sampleQuote,
+  seededTokenStore,
 } from "./helpers";
 
 /** A client wired to a route table and the seeded token store. */
@@ -62,7 +63,12 @@ function makeClient(routes: FakeRoute[]) {
 }
 
 /** A single-route table answering `url` with `body`. */
-function route(method: "GET" | "POST", url: string | RegExp, body: unknown, init?: ResponseInit): FakeRoute {
+function route(
+  method: "GET" | "POST",
+  url: string | RegExp,
+  body: unknown,
+  init?: ResponseInit,
+): FakeRoute {
   return {
     method,
     url,
@@ -107,7 +113,7 @@ describe("the header block", () => {
   });
 
   it("switches to the MemberWeb source and your-bookings page for cancel", async () => {
-    const booking = mapBooking(upcoming.bookings[0]) as Booking;
+    const booking = fixtureBooking();
     const { client, fetchStub } = makeClient([
       route("POST", `${MEMBERS_API}/common-booking/cancel`, true),
     ]);
@@ -263,7 +269,9 @@ describe("getMonthlyCredits", () => {
 
   it("returns undefined for an account with no credit allowance", async () => {
     const { client } = makeClient([
-      route("GET", `${MEMBERS_API}/common-account/monthly-credits`, { responseStatus: { type: "success" } }),
+      route("GET", `${MEMBERS_API}/common-account/monthly-credits`, {
+        responseStatus: { type: "success" },
+      }),
     ]);
     await expect(client.getMonthlyCredits()).resolves.toBeUndefined();
   });
@@ -331,6 +339,15 @@ describe("getSpaces", () => {
       spaceType: "desk",
     });
     expect(spaces[0]?.location.accountType).toBe(2);
+    expect(spaces[1]).toMatchObject({
+      spaceId: SPACE_2,
+      inventoryUuid: INVENTORY_2,
+      seatsAvailable: 3,
+      // "8:0" upstream.
+      startLocal: "2026-09-21T08:00:00",
+      startUtc: "2026-09-21T06:00:00Z",
+    });
+    expect(spaces[1]?.kubeId).toBeUndefined();
     expect(spaces[1]?.location.accountType).toBe(4);
   });
 
@@ -349,7 +366,11 @@ describe("getSpaces", () => {
   it("rejects a non-desk space type without calling upstream", async () => {
     const { client, fetchStub } = makeClient([route("GET", GET_SPACES, spacesFixture)]);
     await expectAppError(
-      client.getSpaces({ locationIds: [LOCATION_1], date: "2026-09-21", spaceType: "meeting_room" }),
+      client.getSpaces({
+        locationIds: [LOCATION_1],
+        date: "2026-09-21",
+        spaceType: "meeting_room",
+      }),
       "UNSUPPORTED_SPACE_TYPE",
     );
     expect(fetchStub.calls).toHaveLength(0);
@@ -372,23 +393,11 @@ describe("getSpaces", () => {
 describe("resolveBookingSpaceId", () => {
   const INVENTORY_URL = `${MEMBERS_API}/common-booking/inventory-details`;
 
-  /** The accountType 2 workspace from the fixture. */
-  function space2() {
-    const mapped = mapWorkspace(spacesFixture.getSharedWorkspaces.workspaces[0], {
-      date: "2026-09-21",
-    });
-    if (!mapped) throw new Error("fixture workspace did not map");
-    return mapped;
-  }
+  /** The accountType 2 workspace from the fixture (reservable.KubeId present). */
+  const space2 = () => fixtureSpace(0);
 
-  /** The accountType 4 workspace from the fixture. */
-  function space4() {
-    const mapped = mapWorkspace(spacesFixture.getSharedWorkspaces.workspaces[1], {
-      date: "2026-09-21",
-    });
-    if (!mapped) throw new Error("fixture workspace did not map");
-    return mapped;
-  }
+  /** The accountType 4 workspace from the fixture (inventoryUuid, no KubeId). */
+  const space4 = () => fixtureSpace(1);
 
   it("prefers kubeSpaceId from inventory-details, with the renamed parameters", async () => {
     const { client, fetchStub } = makeClient([route("GET", INVENTORY_URL, inventoryDetails)]);
@@ -410,7 +419,12 @@ describe("resolveBookingSpaceId", () => {
 
   it("falls back gracefully when inventory-details fails outright", async () => {
     const { client } = makeClient([
-      route("GET", INVENTORY_URL, { responseStatus: { type: "error", message: "gone" } }, { status: 500 }),
+      route(
+        "GET",
+        INVENTORY_URL,
+        { responseStatus: { type: "error", message: "gone" } },
+        { status: 500 },
+      ),
     ]);
     await expect(client.resolveBookingSpaceId(space4())).resolves.toBe(INVENTORY_2);
   });
@@ -691,27 +705,20 @@ describe("listBookings", () => {
     ).resolves.toHaveLength(1);
 
     const all = await client.listBookings();
-    expect(all.map((b) => b.startLocal)).toEqual([
-      "2026-09-22T09:00:00",
-      "2026-09-25T08:00:00",
-    ]);
+    expect(all.map((b) => b.startLocal)).toEqual(["2026-09-22T09:00:00", "2026-09-25T08:00:00"]);
   });
 
   it("attaches the raw upstream item so cancel can be built from it", async () => {
     const { client } = makeClient([route("GET", LIST_URL, upcoming)]);
     const bookings = await client.listBookings();
-    expect(bookings[0]?.raw).toMatchObject({ reservableId: "eeee5555-0000-4000-8000-000000000001" });
+    expect(bookings[0]?.raw).toMatchObject({
+      reservableId: "eeee5555-0000-4000-8000-000000000001",
+    });
   });
 });
 
 describe("cancelBooking", () => {
   const CANCEL_URL = `${MEMBERS_API}/common-booking/cancel`;
-
-  function fixtureBooking(): Booking {
-    const booking = mapBooking(upcoming.bookings[0]);
-    if (!booking) throw new Error("fixture booking did not map");
-    return booking;
-  }
 
   it("sends the documented query parameters and body", async () => {
     const { client, fetchStub } = makeClient([route("POST", CANCEL_URL, true)]);
@@ -860,7 +867,9 @@ describe("upstream error handling", () => {
   });
 
   it("maps a plain 403 to UPSTREAM_AUTH", async () => {
-    const { client } = makeClient([route("GET", PROFILE_URL, { message: "forbidden" }, { status: 403 })]);
+    const { client } = makeClient([
+      route("GET", PROFILE_URL, { message: "forbidden" }, { status: 403 }),
+    ]);
     await expectAppError(client.getProfile(), "UPSTREAM_AUTH");
   });
 
@@ -878,9 +887,7 @@ describe("upstream error handling", () => {
   it("never leaks the access token into an error", async () => {
     const { client } = makeClient([route("GET", PROFILE_URL, errorEnvelope)]);
     const error = await expectAppError(client.getProfile(), "UPSTREAM_ERROR");
-    expect(JSON.stringify(error.details ?? "") + error.message).not.toContain(
-      FIXTURE_ACCESS_TOKEN,
-    );
+    expect(JSON.stringify(error.details ?? "") + error.message).not.toContain(FIXTURE_ACCESS_TOKEN);
   });
 });
 
@@ -890,9 +897,7 @@ describe("upstream error handling", () => {
 
 describe("url and date utilities", () => {
   it("buildUrl drops undefined parameters and encodes the rest", () => {
-    expect(buildUrl("/x", { a: 1, b: undefined, c: "a b" })).toBe(
-      `${MEMBERS_API}/x?a=1&c=a+b`,
-    );
+    expect(buildUrl("/x", { a: 1, b: undefined, c: "a b" })).toBe(`${MEMBERS_API}/x?a=1&c=a+b`);
     expect(buildUrl("x")).toBe(`${MEMBERS_API}/x`);
   });
 

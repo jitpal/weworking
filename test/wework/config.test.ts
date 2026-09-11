@@ -15,8 +15,8 @@ import {
   fetchAuth0Config,
   normaliseConfig,
 } from "../../src/wework/auth/config";
-import { createFakeFetch } from "../helpers/fake-fetch";
 import auth0Config from "../fixtures/wework/auth0-config.json";
+import { createFakeFetch } from "../helpers/fake-fetch";
 
 /** Silences (and captures) the fallback warning. */
 function withWarnSpy<T>(fn: (warn: ReturnType<typeof vi.spyOn>) => Promise<T>): Promise<T> {
@@ -27,7 +27,12 @@ function withWarnSpy<T>(fn: (warn: ReturnType<typeof vi.spyOn>) => Promise<T>): 
 describe("fetchAuth0Config", () => {
   it("reads the SPA's own configuration", async () => {
     const fetchStub = createFakeFetch([
-      { method: "GET", url: AUTH0_CONFIG_URL, times: 1, response: () => Response.json(auth0Config) },
+      {
+        method: "GET",
+        url: AUTH0_CONFIG_URL,
+        times: 1,
+        response: () => Response.json(auth0Config),
+      },
     ]);
     await expect(fetchAuth0Config(fetchStub)).resolves.toEqual(FALLBACK_AUTH0_CONFIG);
     // The config URL must keep its url-encoded `domain` parameter verbatim.
@@ -65,7 +70,11 @@ describe("fetchAuth0Config", () => {
   it("falls back on a non-2xx, and says so in a redacted warning", async () => {
     await withWarnSpy(async (warn) => {
       const fetchStub = createFakeFetch([
-        { method: "GET", url: AUTH0_CONFIG_URL, response: () => new Response("nope", { status: 503 }) },
+        {
+          method: "GET",
+          url: AUTH0_CONFIG_URL,
+          response: () => new Response("nope", { status: 503 }),
+        },
       ]);
       await expect(fetchAuth0Config(fetchStub)).resolves.toEqual(FALLBACK_AUTH0_CONFIG);
       expect(warn).toHaveBeenCalledOnce();
@@ -93,7 +102,11 @@ describe("fetchAuth0Config", () => {
   it("falls back when the body is JSON but unrecognisable", async () => {
     await withWarnSpy(async () => {
       const fetchStub = createFakeFetch([
-        { method: "GET", url: AUTH0_CONFIG_URL, response: () => Response.json({ unexpected: true }) },
+        {
+          method: "GET",
+          url: AUTH0_CONFIG_URL,
+          response: () => Response.json({ unexpected: true }),
+        },
       ]);
       await expect(fetchAuth0Config(fetchStub)).resolves.toEqual(FALLBACK_AUTH0_CONFIG);
     });
@@ -132,8 +145,12 @@ describe("normaliseConfig", () => {
 describe("url helpers", () => {
   it("build tenant urls with no double slashes", () => {
     expect(authOrigin(FALLBACK_AUTH0_CONFIG)).toBe("https://idp.wework.com");
-    expect(authUrl(FALLBACK_AUTH0_CONFIG, "/oauth/token")).toBe("https://idp.wework.com/oauth/token");
-    expect(authUrl(FALLBACK_AUTH0_CONFIG, "oauth/token")).toBe("https://idp.wework.com/oauth/token");
+    expect(authUrl(FALLBACK_AUTH0_CONFIG, "/oauth/token")).toBe(
+      "https://idp.wework.com/oauth/token",
+    );
+    expect(authUrl(FALLBACK_AUTH0_CONFIG, "oauth/token")).toBe(
+      "https://idp.wework.com/oauth/token",
+    );
   });
 });
 

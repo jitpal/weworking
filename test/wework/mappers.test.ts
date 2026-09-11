@@ -36,11 +36,15 @@ import {
   zoneOffsetMinutesAt,
 } from "../../src/wework/mappers";
 import cityDetails from "../fixtures/wework/city-details.json";
-import locationsByGeo from "../fixtures/wework/locations-by-geo.json";
 import monthlyCredits from "../fixtures/wework/monthly-credits.json";
-import spaces from "../fixtures/wework/get-spaces.json";
-import upcoming from "../fixtures/wework/upcoming-bookings.json";
-import { LOCATION_1, LOCATION_2, SPACE_1 } from "./helpers";
+import {
+  fixtureBookingRaw,
+  fixtureLocationRaw,
+  fixtureWorkspace,
+  LOCATION_1,
+  LOCATION_2,
+  SPACE_1,
+} from "./helpers";
 
 describe("scalar coercion", () => {
   it("str trims, rejects empty, and stringifies numbers", () => {
@@ -229,7 +233,8 @@ describe("distanceKm", () => {
 });
 
 describe("mapLocation", () => {
-  const [l1, l2] = locationsByGeo.locationsByGeo;
+  const l1 = fixtureLocationRaw(0);
+  const l2 = fixtureLocationRaw(1);
 
   it("maps the full geo record, padding the opening hours", () => {
     expect(mapLocation(l1)).toEqual({
@@ -300,7 +305,9 @@ describe("mapCities", () => {
 });
 
 describe("mapWorkspace", () => {
-  const [w1, w2, w3] = spaces.getSharedWorkspaces.workspaces;
+  const w1 = fixtureWorkspace(0);
+  const w2 = fixtureWorkspace(1);
+  const w3 = fixtureWorkspace(2);
 
   it("maps the accountType 2 workspace, filling the window from the opening hours", () => {
     const mapped = mapWorkspace(w1, { date: "2026-09-21" });
@@ -372,7 +379,7 @@ describe("mapWorkspace", () => {
   });
 
   it("fills a partial nested location from a previously-seen full one", () => {
-    const fallback = mapLocation(locationsByGeo.locationsByGeo[0]);
+    const fallback = mapLocation(fixtureLocationRaw(0));
     const mapped = mapWorkspace(w1, { date: "2026-09-21", fallbackLocation: fallback });
     // The nested location in get-spaces has no `name`.
     expect(mapped?.location.name).toBe("Fake Tower");
@@ -410,12 +417,14 @@ describe("mapProfile and mapCredits", () => {
 
   it("returns undefined for an account with no credit allowance", () => {
     expect(mapCredits({}, { start: "a", end: "b" })).toBeUndefined();
-    expect(mapCredits({ responseStatus: { type: "success" } }, { start: "a", end: "b" })).toBeUndefined();
+    expect(
+      mapCredits({ responseStatus: { type: "success" } }, { start: "a", end: "b" }),
+    ).toBeUndefined();
   });
 });
 
 describe("mapBooking", () => {
-  const [b1] = upcoming.bookings;
+  const b1 = fixtureBookingRaw(0);
 
   it("re-anchors the local-wall-clock-stamped-Z times without converting them", () => {
     const booking = mapBooking(b1);
@@ -442,7 +451,7 @@ describe("mapBooking", () => {
   });
 
   it("maps the second fixture booking at the other location", () => {
-    const booking = mapBooking(upcoming.bookings[1]);
+    const booking = mapBooking(fixtureBookingRaw(1));
     expect(booking?.locationId).toBe(LOCATION_2);
     expect(booking?.startLocal).toBe("2026-09-25T08:00:00");
     expect(booking?.credits).toBe(8);

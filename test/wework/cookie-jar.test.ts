@@ -102,10 +102,7 @@ describe("expiry", () => {
   it("drops a cookie once Expires has passed", () => {
     let clock = Date.parse("2026-09-20T00:00:00Z");
     const jar = new CookieJar({ now: () => clock });
-    jar.addFromResponse(
-      IDP,
-      withCookies("temp=T; Path=/; Expires=Sun, 20 Sep 2026 01:00:00 GMT"),
-    );
+    jar.addFromResponse(IDP, withCookies("temp=T; Path=/; Expires=Sun, 20 Sep 2026 01:00:00 GMT"));
     expect(jar.headerFor(IDP)).toBe("temp=T");
     clock = Date.parse("2026-09-20T02:00:00Z");
     expect(jar.headerFor(IDP)).toBe("");

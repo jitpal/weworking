@@ -12,10 +12,10 @@ import type { SessionRecord } from "../../src/core/types";
 import { isAppError } from "../../src/errors";
 import { FALLBACK_AUTH0_CONFIG } from "../../src/wework/auth/config";
 import { refreshSession } from "../../src/wework/auth/refresh";
-import { createFakeFetch } from "../helpers/fake-fetch";
+import tokenResponse from "../fixtures/wework/token-response.json";
 import noRefresh from "../fixtures/wework/token-response-no-refresh.json";
 import rotated from "../fixtures/wework/token-response-rotated.json";
-import tokenResponse from "../fixtures/wework/token-response.json";
+import { createFakeFetch } from "../helpers/fake-fetch";
 import {
   FIXTURE_ACCESS_TOKEN,
   FIXTURE_EXPIRES_AT_MS,

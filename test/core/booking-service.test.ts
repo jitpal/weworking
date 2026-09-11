@@ -8,9 +8,12 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import type { SessionRpc, WeWorkApi } from "../../src/core/booking-service";
 import { signQuote } from "../../src/core/quote";
 import type { QuotePayload } from "../../src/core/types";
 import { isAppError } from "../../src/errors";
+import type { WeWorkSession } from "../../src/session/do";
+import type { WeWorkApi as ClientWeWorkApi } from "../../src/wework/client";
 import {
   createHarness,
   firstQuote,
@@ -21,6 +24,22 @@ import {
   READ_WRITE_ACTOR,
   TEST_QUOTE_KEY,
 } from "./fakes";
+
+/**
+ * Compile-time guard: the `WeWorkApi` this layer declares locally (build spec §11.1) and
+ * the one `src/wework/client.ts` exports must stay mutually assignable, and a real
+ * `DurableObjectStub<WeWorkSession>` must satisfy `SessionRpc`.
+ *
+ * These are the two seams `src/index.ts` wires together. Declaring them structurally keeps
+ * `src/core` free of any dependency on the transport and session layers; this type is what
+ * turns a drift between the declarations into a typecheck failure rather than a runtime
+ * surprise on the first real booking. It is asserted in the test at the bottom of this file.
+ */
+type ContractCompatibility = [
+  ClientWeWorkApi extends WeWorkApi ? true : never,
+  WeWorkApi extends ClientWeWorkApi ? true : never,
+  DurableObjectStub<WeWorkSession> extends SessionRpc ? true : never,
+];
 
 /** The code of the `AppError` a promise rejects with; fails the test on anything else. */
 async function codeOf(promise: Promise<unknown>): Promise<string> {
@@ -648,5 +667,14 @@ describe("whoami", () => {
     await expect(harness.service.whoami(READ_WRITE_ACTOR)).resolves.toMatchObject({
       writeEnabled: false,
     });
+  });
+});
+
+describe("cross-module contracts", () => {
+  it("keeps WeWorkApi and SessionRpc assignable in both directions", () => {
+    // Only the annotation matters: if a declaration drifts, one of the tuple members
+    // becomes `never` and `tsc` rejects this line.
+    const compatible: ContractCompatibility = [true, true, true];
+    expect(compatible).toEqual([true, true, true]);
   });
 });

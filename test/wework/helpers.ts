@@ -5,9 +5,14 @@
  * regenerated fixture cannot silently disagree with the tests that assert on it.
  */
 
-import type { QuotePayload, SessionRecord } from "../../src/core/types";
+import type { Booking, QuotePayload, SessionRecord, SpaceAvailability } from "../../src/core/types";
 import { MemoryTokenStore } from "../../src/session/token-store";
+import { mapBooking, mapWorkspace } from "../../src/wework/mappers";
+import type { RawLocation, RawUpcomingBooking, RawWorkspace } from "../../src/wework/raw-types";
+import spacesFixture from "../fixtures/wework/get-spaces.json";
+import locationsFixture from "../fixtures/wework/locations-by-geo.json";
 import tokenResponse from "../fixtures/wework/token-response.json";
+import upcomingFixture from "../fixtures/wework/upcoming-bookings.json";
 
 /** The fabricated access token every fixture shares. */
 export const FIXTURE_ACCESS_TOKEN: string = tokenResponse.access_token;
@@ -98,4 +103,48 @@ export function formBody(body: string | undefined): Record<string, string> {
 /** The query parameters of a recorded URL. */
 export function queryOf(url: string): Record<string, string> {
   return Object.fromEntries(new URL(url).searchParams.entries());
+}
+
+/* -------------------------------------------------------------------------- */
+/* Typed fixture accessors                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Indexing a JSON fixture yields `T | undefined` under `noUncheckedIndexedAccess`,
+ * and a `!` or a cast in every test would hide a genuinely missing entry. These
+ * throw instead, so a regenerated fixture that drops an entry fails loudly.
+ */
+function at<T>(items: T[], index: number, what: string): T {
+  const item = items[index];
+  if (item === undefined) throw new Error(`fixture has no ${what} at index ${index}`);
+  return item;
+}
+
+/** One of the three `get-spaces` workspaces: 0 is accountType 2, 1 and 2 are 4. */
+export function fixtureWorkspace(index: 0 | 1 | 2): RawWorkspace {
+  return at(spacesFixture.getSharedWorkspaces.workspaces, index, "workspace");
+}
+
+/** One of the two raw upcoming-booking items. */
+export function fixtureBookingRaw(index: 0 | 1): RawUpcomingBooking {
+  return at(upcomingFixture.bookings, index, "booking");
+}
+
+/** One of the two raw geo locations: 0 is accountType 2, 1 is accountType 4. */
+export function fixtureLocationRaw(index: 0 | 1): RawLocation {
+  return at(locationsFixture.locationsByGeo, index, "location");
+}
+
+/** The first fixture booking, already mapped to the domain type. */
+export function fixtureBooking(): Booking {
+  const booking = mapBooking(fixtureBookingRaw(0));
+  if (!booking) throw new Error("the fixture booking did not map");
+  return booking;
+}
+
+/** One fixture workspace, already mapped to the domain type. */
+export function fixtureSpace(index: 0 | 1 | 2): SpaceAvailability {
+  const space = mapWorkspace(fixtureWorkspace(index), { date: "2026-09-21" });
+  if (!space) throw new Error("the fixture workspace did not map");
+  return space;
 }
