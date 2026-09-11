@@ -154,6 +154,43 @@ describe("listCities", () => {
 });
 
 describe("listLocationsByCity", () => {
+  it("persists listed buildings to the location store and reads the offset back for get-spaces", async () => {
+    const stored = new Map<string, import("../../src/core/types").Location>();
+    const store = {
+      get: async (id: string) => stored.get(id),
+      put: async (locations: import("../../src/core/types").Location[]) => {
+        for (const l of locations) stored.set(l.locationId, l);
+      },
+    };
+    const fetchStub = createFakeFetch([
+      route("GET", `${MEMBERS_API}/wework-yardi/ondemand/get-locations-by-geo`, locationsByGeo),
+      route("GET", `${MEMBERS_API}/spaces/get-spaces`, spacesFixture),
+    ]);
+    const first = new WeWorkClient({
+      fetch: fetchStub,
+      tokens: seededTokenStore(),
+      now,
+      locationStore: store,
+    });
+    await first.listLocationsByCity("Berlin");
+    expect(stored.has(LOCATION_1)).toBe(true);
+
+    // A fresh client (cold in-memory cache, as in a new isolate) must still send the
+    // building's offset rather than +00:00.
+    const second = new WeWorkClient({
+      fetch: fetchStub,
+      tokens: seededTokenStore(),
+      now,
+      locationStore: store,
+    });
+    await second.getSpaces({ locationIds: [LOCATION_1], date: "2026-09-21" });
+    const spacesCall = fetchStub.calls.find((c) => c.url.includes("/spaces/get-spaces"));
+    expect(queryOf(spacesCall?.url ?? "").locationOffset).toBe(
+      stored.get(LOCATION_1)?.timezoneOffset,
+    );
+    expect(stored.get(LOCATION_1)?.timezoneOffset).not.toBe("+00:00");
+  });
+
   it("sends the documented city-search parameters", async () => {
     const { client, fetchStub } = makeClient([
       route("GET", `${MEMBERS_API}/wework-yardi/ondemand/get-locations-by-geo`, locationsByGeo),

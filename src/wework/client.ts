@@ -394,6 +394,8 @@ export class WeWorkClient implements WeWorkApi {
       const inner = (body as { getSharedWorkspaces?: unknown } | null)?.getSharedWorkspaces;
       console.warn("get-spaces returned no workspaces", {
         locationIds: args.locationIds.length,
+        locationOffset: knownOffset ?? "+00:00 (unknown building)",
+        date: args.date,
         topLevelKeys: top,
         sharedWorkspacesKeys:
           inner && typeof inner === "object" ? Object.keys(inner) : typeof inner,
@@ -423,7 +425,7 @@ export class WeWorkClient implements WeWorkApi {
       this.#locations.set(mapped.location.locationId, mapped.location);
       out.push(mapped);
     }
-    if (out.length > 0) this.#rememberLocations(out.map((space) => space.location));
+    if (out.length > 0) await this.#rememberLocations(out.map((space) => space.location));
     return out;
   }
 
@@ -745,13 +747,16 @@ export class WeWorkClient implements WeWorkApi {
     }
   }
 
-  #rememberLocations(locations: Location[]): Location[] {
-    if (this.#locationStore && locations.length > 0) {
-      this.#locationStore
-        .put(locations)
-        .catch((err) => console.warn("location store write failed", toErrorBody(err)));
-    }
+  async #rememberLocations(locations: Location[]): Promise<Location[]> {
     for (const location of locations) this.#locations.set(location.locationId, location);
+    if (this.#locationStore && locations.length > 0) {
+      // Awaited on purpose: Workers drop un-awaited work once the response is sent.
+      try {
+        await this.#locationStore.put(locations);
+      } catch (err) {
+        console.warn("location store write failed", toErrorBody(err));
+      }
+    }
     return locations;
   }
 
