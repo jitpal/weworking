@@ -204,6 +204,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 /** A city-wide search fans out across at most this many buildings (one upstream call each). */
 const MAX_CITY_LOCATIONS = 10;
+/** How long a signed quote stays bookable. Long enough to ask the user, short enough that prices stay honest. */
+export const QUOTE_TTL_SECONDS = 600;
 /** Default radius for a lat/lng availability search. */
 const DEFAULT_GEO_RADIUS_KM = 5;
 /** Credit drift tolerated between the signed quote and the price at booking time. */
@@ -394,7 +396,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     if (locationOffset) spacesArgs.locationOffset = locationOffset;
     const spaces = await api.getSpaces(spacesArgs);
 
-    const expSeconds = Math.floor(now() / 1000) + config.quoteTtlSeconds;
+    const expSeconds = Math.floor(now() / 1000) + QUOTE_TTL_SECONDS;
     const results: AvailabilityResult[] = [];
 
     for (const space of spaces) {
@@ -512,7 +514,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     const replay = await replayed<CreateBookingResult>(key);
     if (replay) return replay;
 
-    if (config.maxCreditsPerBooking > 0 && payload.credits > config.maxCreditsPerBooking) {
+    if (config.maxCreditsPerBooking >= 0 && payload.credits > config.maxCreditsPerBooking) {
       await audit(actor, "create_booking", auditArgs(payload, args), "denied", {
         credits: payload.credits,
         dryRun,

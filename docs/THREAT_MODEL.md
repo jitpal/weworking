@@ -60,7 +60,7 @@ The agent host (Claude Code, Cursor, claude.ai) sits outside boundary 1. It is t
 | `write` | everything `read` can, plus book and cancel within `MAX_BOOKINGS_PER_DAY`, `MAX_BOOKINGS_PER_WEEK`, `MAX_CREDITS_PER_BOOKING`, only from a valid signed quote, only while `WRITE_ENABLED="true"` | exceed the caps, book without a fresh quote, retrieve the WeWork token, read or alter the stored session |
 | `admin` | nothing beyond `write` today. It can be granted and it can be minted, but no route requires it | reach `/admin/*` at all: those pages take the admin cookie only. So it cannot mint keys, read the audit log, or replace the stored session |
 
-So the blast radius of a leaked `write` credential is bounded in money by the caps: at the defaults, one booking per day and five per week. That is the point of the caps. They exist for a misbehaving or compromised agent, not for the user's convenience.
+So the blast radius of a leaked `write` credential is bounded in money by the caps: at the defaults, one booking per day, seven per week, and no credits spent at all unless the cap is raised. That is the point of the caps. They exist for a misbehaving or compromised agent, not for the user's convenience.
 
 Minting keys is a capability of the **admin password**, not of any agent credential: `/admin/keys` sits behind the same browser sign-in as the rest of `/admin/*`, and every mint and revocation is written to the audit log (with the key's name and scopes, never the key).
 

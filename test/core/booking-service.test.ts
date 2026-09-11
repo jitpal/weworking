@@ -735,7 +735,7 @@ describe("whoami", () => {
       credits: { remaining: 7.5 },
       session: { state: "valid" },
       actor: READ_WRITE_ACTOR,
-      caps: { maxBookingsPerDay: 1, maxBookingsPerWeek: 5, maxCreditsPerBooking: 0 },
+      caps: { maxBookingsPerDay: 1, maxBookingsPerWeek: 5, maxCreditsPerBooking: -1 },
       capsRemaining: { day: 1, week: 5 },
       writeEnabled: true,
     });

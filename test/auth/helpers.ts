@@ -21,7 +21,6 @@ export function fakeEnv(overrides: Partial<Record<string, unknown>> = {}): Env {
     MAX_BOOKINGS_PER_DAY: "1",
     MAX_BOOKINGS_PER_WEEK: "5",
     MAX_CREDITS_PER_BOOKING: "0",
-    QUOTE_TTL_SECONDS: "600",
     LOGIN_STRATEGY: "manual",
     PUBLIC_BASE_URL: "https://desk.example.com",
     ...overrides,

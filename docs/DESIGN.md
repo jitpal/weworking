@@ -31,7 +31,7 @@ Secrets (`wrangler secret put`, `.dev.vars` locally; `.dev.vars.example` committ
 - `QUOTE_SIGNING_KEY` (32+ random bytes hex)
 - `COOKIE_SIGNING_KEY` (admin session cookie)
 Vars (plain, in wrangler.jsonc `vars`, overridable):
-- `WRITE_ENABLED="true"`, `MAX_BOOKINGS_PER_DAY="1"`, `MAX_BOOKINGS_PER_WEEK="5"`, `MAX_CREDITS_PER_BOOKING="0"` (0=unlimited), `QUOTE_TTL_SECONDS="600"`, `LOGIN_STRATEGY="auto"` (auto|headless|manual), `PUBLIC_BASE_URL=""` (optional override for OAuth issuer/urls).
+- `WRITE_ENABLED="true"`, `MAX_BOOKINGS_PER_DAY="1"`, `MAX_BOOKINGS_PER_WEEK="7"`, `MAX_CREDITS_PER_BOOKING="0"` (0 = free desks only, "unlimited" = no cap), `LOGIN_STRATEGY="auto"` (auto|headless|manual), `PUBLIC_BASE_URL=""` (optional override for OAuth issuer/urls).
 
 ## 3. Repo layout
 ```

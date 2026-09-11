@@ -6,7 +6,7 @@
  * captured at search time, signed with `QUOTE_SIGNING_KEY`, and handed to the agent
  * as one opaque string. An agent therefore cannot book a space the user never saw in
  * a search result, cannot move the window, and cannot change the price: any edit
- * breaks the MAC, and the token dies after `QUOTE_TTL_SECONDS`.
+ * breaks the MAC, and the token dies after ten minutes (`QUOTE_TTL_SECONDS` in booking-service).
  *
  * Wire format (§6 of the build spec):
  *
@@ -38,7 +38,7 @@ const HMAC_PARAMS = { name: "HMAC", hash: "SHA-256" } as const;
  * Signs a quote payload.
  *
  * @param payload the slot description; `exp` must already be set by the caller
- *   (the booking service sets it to `now + config.quoteTtlSeconds`)
+ *   (the booking service sets it to `now + QUOTE_TTL_SECONDS`)
  * @param key `QUOTE_SIGNING_KEY` — hex is decoded to bytes, anything else is used as
  *   UTF-8, so tests can pass a readable string
  * @returns the two-part quote token

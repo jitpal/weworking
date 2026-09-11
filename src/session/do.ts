@@ -296,7 +296,7 @@ export class WeWorkSession extends DurableObject<Env> {
     const now = this.now();
     const counts = this.#counts(date, now, bookingKey);
 
-    if (caps.maxCreditsPerBooking > 0 && credits > caps.maxCreditsPerBooking) {
+    if (caps.maxCreditsPerBooking >= 0 && credits > caps.maxCreditsPerBooking) {
       return {
         ok: false,
         code: "CAP_EXCEEDED",

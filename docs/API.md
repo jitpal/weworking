@@ -17,7 +17,7 @@ Naming: every request parameter is `snake_case`, whether it is an MCP tool argum
 - Responses carry both local and UTC instants: `startLocal`/`endLocal` (local wall clock) and `startUtc`/`endUtc` (true UTC, `Z`). Show the user local times.
 - **Credits** are WeWork credits, not currency. `cashPrice` appears only when the upstream offers one.
 - **`space_type`** is `desk` | `meeting_room` | `private_office`. Only `desk` is implemented; anything else returns `UNSUPPORTED_SPACE_TYPE`. See [CAPTURE_GUIDE.md](CAPTURE_GUIDE.md).
-- **Quotes** are opaque signed strings from `search_availability`. `create_booking` takes nothing else to identify a space. They expire after `QUOTE_TTL_SECONDS` (default 600).
+- **Quotes** are opaque signed strings from `search_availability`. `create_booking` takes nothing else to identify a space. They expire after ten minutes.
 - **Idempotency**: pass `idempotency_key` (any unique string, a UUID is ideal) on writes. A replay with the same key returns the stored result instead of acting again.
 - Every tool result also includes a human-readable `summary` string; MCP returns it as the `content[0].text`.
 
@@ -303,7 +303,7 @@ Every failure, on both front doors, uses one envelope:
 | `UPSTREAM_RATE_LIMITED` | 429 | WeWork returned 429 | wait and retry once, well after any `Retry-After`. Do not loop |
 | `UPSTREAM_ERROR` | 502 | upstream error or unparseable response | retry once for reads; never auto-retry a booking. Report and stop |
 | `QUOTE_INVALID` | 400 | signature failed, wrong deployment, or mangled quote | run `search_availability` again and use a fresh quote verbatim |
-| `QUOTE_EXPIRED` | 409 | quote older than `QUOTE_TTL_SECONDS` | search again and book promptly |
+| `QUOTE_EXPIRED` | 409 | quote older than ten minutes | search again and book promptly |
 | `CAP_EXCEEDED` | 429 | daily/weekly booking cap or credit ceiling reached | stop. Explain the cap and that the user can raise it in `wrangler.jsonc`. Do not look for a workaround |
 | `NOT_AVAILABLE` | 409 | the space was taken between the search and the booking | search again and offer the user the new options |
 | `BOOKING_REFUSED` | 409 | WeWork accepted the request but refused the booking (no credits, policy, overlap) | report the reason. Nothing was charged. Do not retry blindly |

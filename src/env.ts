@@ -75,7 +75,6 @@ export interface Env {
   MAX_BOOKINGS_PER_DAY?: string;
   MAX_BOOKINGS_PER_WEEK?: string;
   MAX_CREDITS_PER_BOOKING?: string;
-  QUOTE_TTL_SECONDS?: string;
   LOGIN_STRATEGY?: string;
   PUBLIC_BASE_URL?: string;
 }
@@ -93,11 +92,13 @@ export interface Config {
   writeEnabled: boolean;
   maxBookingsPerDay: number;
   maxBookingsPerWeek: number;
-  /** `0` means unlimited. */
+  /**
+   * Most credits one booking may spend. `0` (the default) allows only bookings that
+   * cost no credits, which is every desk on an All Access plan and every cash
+   * booking. `-1` means no limit.
+   */
   maxCreditsPerBooking: number;
 
-  /* Quotes */
-  quoteTtlSeconds: number;
   /** Raw hex HMAC key for quote signing. */
   quoteSigningKey: string;
 
@@ -135,9 +136,8 @@ const MIN_KEY_BYTES = 32;
 const DEFAULTS = {
   WRITE_ENABLED: "true",
   MAX_BOOKINGS_PER_DAY: "1",
-  MAX_BOOKINGS_PER_WEEK: "5",
+  MAX_BOOKINGS_PER_WEEK: "7",
   MAX_CREDITS_PER_BOOKING: "0",
-  QUOTE_TTL_SECONDS: "600",
   LOGIN_STRATEGY: "auto",
   PUBLIC_BASE_URL: "",
 } as const;
@@ -181,15 +181,8 @@ export function parseConfig(env: Env): Config {
       "MAX_BOOKINGS_PER_WEEK",
       { min: 0, max: 200 },
     ),
-    maxCreditsPerBooking: parseInteger(
+    maxCreditsPerBooking: parseCreditsCap(
       env.MAX_CREDITS_PER_BOOKING ?? DEFAULTS.MAX_CREDITS_PER_BOOKING,
-      "MAX_CREDITS_PER_BOOKING",
-      { min: 0, max: 100_000 },
-    ),
-    quoteTtlSeconds: parseInteger(
-      env.QUOTE_TTL_SECONDS ?? DEFAULTS.QUOTE_TTL_SECONDS,
-      "QUOTE_TTL_SECONDS",
-      { min: 30, max: 86_400 },
     ),
     quoteSigningKey,
     cookieSigningKey,
@@ -275,6 +268,13 @@ function parseInteger(value: string, name: string, bounds: { min: number; max: n
     throw validation(`${name} must be between ${bounds.min} and ${bounds.max}.`);
   }
   return parsed;
+}
+
+/** `"unlimited"` (or `-1`) disables the cap; otherwise a non-negative integer. */
+function parseCreditsCap(value: string): number {
+  const normalised = value.trim().toLowerCase();
+  if (normalised === "unlimited" || normalised === "none" || normalised === "-1") return -1;
+  return parseInteger(value, "MAX_CREDITS_PER_BOOKING", { min: 0, max: 100_000 });
 }
 
 function parseLoginStrategy(value: string): LoginStrategyName {

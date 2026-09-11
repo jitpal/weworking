@@ -81,9 +81,8 @@ Plain values in `wrangler.jsonc` under `vars`. Edit and redeploy to change them.
 | --- | --- | --- |
 | `WRITE_ENABLED` | `"true"` | `"false"` rejects every write with `WRITE_DISABLED` |
 | `MAX_BOOKINGS_PER_DAY` | `"1"` | enforced in the Durable Object ledger |
-| `MAX_BOOKINGS_PER_WEEK` | `"5"` | same |
-| `MAX_CREDITS_PER_BOOKING` | `"0"` | `0` = no ceiling |
-| `QUOTE_TTL_SECONDS` | `"600"` | quote lifetime |
+| `MAX_BOOKINGS_PER_WEEK` | `"7"` | same |
+| `MAX_CREDITS_PER_BOOKING` | `"0"` | `0` allows only bookings that cost no credits (All Access desks, cash bookings); a number caps credits per booking; `"unlimited"` removes the cap |
 | `LOGIN_STRATEGY` | `"auto"` | `auto` tries refresh then headless login; `headless` forces login attempts; `manual` never logs in, so only a pasted session works |
 | `PUBLIC_BASE_URL` | `""` | set to your canonical origin if you use a custom domain, so OAuth metadata and error hints use it |
 
@@ -203,7 +202,7 @@ WeWork returned 429. The client honours `Retry-After` up to three attempts on au
 
 ### `QUOTE_EXPIRED` / `QUOTE_INVALID`
 
-Quotes live `QUOTE_TTL_SECONDS` (default 600). Expired means search again and book with the fresh quote. Invalid means the signature did not verify: a mangled copy/paste, a quote from another deployment, or `QUOTE_SIGNING_KEY` changed since it was issued.
+Quotes live ten minutes. Expired means search again and book with the fresh quote. Invalid means the signature did not verify: a mangled copy/paste, a quote from another deployment, or `QUOTE_SIGNING_KEY` changed since it was issued.
 
 ### `CAP_EXCEEDED`
 

@@ -143,11 +143,12 @@ describe("GET /admin", () => {
     );
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("WeWork session");
+    expect(html).toContain("Connected to WeWork");
     expect(html).toContain("valid");
     expect(html).toContain("2026-09-11T20:00:00.000Z");
-    expect(html).toContain("Max bookings / day");
-    expect(html).toContain("unlimited");
+    expect(html).toContain("Bookings per day");
+    expect(html).toContain("/mcp</pre>");
+    expect(html).toContain('href="/admin/keys"');
     expect(html).toContain('href="/admin/connect"');
     expect(html).toContain('href="/admin/audit"');
     expect(html).toContain("https://desk.example.com/mcp");
@@ -169,7 +170,7 @@ describe("GET /admin", () => {
       { headers: { ...AUTH, ...HTML_HEADERS } },
       await adminEnv(),
     );
-    await expect(response.text()).resolves.toContain("No WeWork session stored yet");
+    await expect(response.text()).resolves.toContain("Not connected to WeWork yet");
   });
 
   it("surfaces a flash message from the query string, escaped", async () => {
@@ -470,7 +471,6 @@ describe("GET /admin/status", () => {
       maxBookingsPerDay: 1,
       maxBookingsPerWeek: 5,
       maxCreditsPerBooking: 0,
-      quoteTtlSeconds: 600,
     });
     expect(body.writeEnabled).toBe(true);
     expect(body.secrets).toEqual({
@@ -573,12 +573,12 @@ describe("/admin/keys", () => {
     expect(response.headers.getSetCookie().join(";")).toContain("ww_csrf=");
   });
 
-  it("ticks read by default and offers the other scopes", async () => {
+  it("ticks read by default, offers write, and does not offer admin", async () => {
     const app = adminPages({ sessionStub: () => fakeStub() });
     const { html } = await loadKeys(app, await adminEnv());
     expect(html).toContain('<input type="checkbox" name="scope" value="read" checked>');
     expect(html).toContain('<input type="checkbox" name="scope" value="write">');
-    expect(html).toContain('<input type="checkbox" name="scope" value="admin">');
+    expect(html).not.toContain('name="scope" value="admin"');
   });
 
   it("says so when there are no keys yet", async () => {

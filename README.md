@@ -45,9 +45,9 @@ Six MCP tools, mirrored by REST routes:
 
 Safety rails, because this spends real money:
 
-- **Signed quotes.** `create_booking` accepts only an HMAC-SHA-256 signed `quote` produced by `search_availability` (10 min TTL by default). An agent cannot invent a booking out of free-text parameters, and the price the user saw is the price that gets re-checked at booking time.
+- **Signed quotes.** `create_booking` accepts only an HMAC-SHA-256 signed `quote` produced by `search_availability` (valid for ten minutes). An agent cannot invent a booking out of free-text parameters, and the price the user saw is the price that gets re-checked at booking time.
 - **Idempotency.** `idempotency_key` on writes; replays return the original result instead of double-booking.
-- **Daily and weekly caps.** `MAX_BOOKINGS_PER_DAY`, `MAX_BOOKINGS_PER_WEEK`, and an optional `MAX_CREDITS_PER_BOOKING` ceiling, enforced in the Durable Object.
+- **Daily and weekly caps.** `MAX_BOOKINGS_PER_DAY`, `MAX_BOOKINGS_PER_WEEK`, and `MAX_CREDITS_PER_BOOKING`, which defaults to allowing only free desks, enforced in the Durable Object.
 - **`dry_run`.** Validates the quote, caps, and availability and returns the exact booking it *would* make, without calling WeWork's booking endpoint.
 - **Read/write scopes.** Tokens are scoped `read`, `write`, `admin`. A `read`-only token cannot book or cancel.
 - **Audit log.** Every tool call is recorded (actor, tool, redacted args, outcome, booking id, credits) and readable at `/admin/audit`.
@@ -175,9 +175,8 @@ Vars (plain values in `wrangler.jsonc`, edit and redeploy):
 | --- | --- | --- |
 | `WRITE_ENABLED` | `"true"` | `"false"` makes the deployment read-only |
 | `MAX_BOOKINGS_PER_DAY` | `"1"` | per-day booking cap |
-| `MAX_BOOKINGS_PER_WEEK` | `"5"` | per-week booking cap |
-| `MAX_CREDITS_PER_BOOKING` | `"0"` | credit ceiling per booking; `0` = unlimited |
-| `QUOTE_TTL_SECONDS` | `"600"` | how long a signed quote stays valid |
+| `MAX_BOOKINGS_PER_WEEK` | `"7"` | per-week booking cap |
+| `MAX_CREDITS_PER_BOOKING` | `"0"` | most credits one booking may spend. `0` allows only free desks (All Access desks and cash bookings cost no credits); `"unlimited"` removes the cap |
 | `LOGIN_STRATEGY` | `"auto"` | `auto` \| `headless` \| `manual` (manual = never attempt login) |
 | `PUBLIC_BASE_URL` | `""` | override the public origin used in OAuth metadata and hints |
 

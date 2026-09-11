@@ -3,7 +3,7 @@
  *
  * Everything here is behind {@link requireAdmin}, which accepts only the `ww_admin`
  * cookie: these are operator pages, driven from a browser. `/admin/connect` exists
- * because the interesting failure mode of this project is *not* code — it is "Auth0
+ * because the interesting failure mode of this project is *not* code, it is "Auth0
  * refused an automated login", which only a human with a browser can fix. A
  * bookmarklet copies the Auth0 SPA cache out of `members.wework.com`, the operator
  * pastes it here, and the token lands in the Durable Object.
@@ -17,7 +17,7 @@
  * `members.wework.com` would not carry it, and asking the operator to paste is
  * both simpler and easier to trust than a CORS exception on this route.
  *
- * No page ever displays a stored token — only `SessionInfo` (state, source,
+ * No page ever displays a stored token, only `SessionInfo` (state, source,
  * timestamps, whether a refresh token exists).
  */
 
@@ -34,7 +34,7 @@ import {
   verifyCsrfToken,
 } from "../auth/admin-session";
 import { baseUrlFrom } from "../auth/guard";
-import { generateApiKey, SCOPES } from "../auth/tokens";
+import { generateApiKey } from "../auth/tokens";
 import type { Scope, SessionInfo, SessionRecord } from "../core/types";
 import { type Config, type Env, parseConfig } from "../env";
 import { isAppError, toErrorBody } from "../errors";
@@ -79,7 +79,7 @@ export interface AdminSessionStub {
   }): Promise<void>;
 }
 
-/** Injectable dependencies — production defaults are the real DO stub and parser. */
+/** Injectable dependencies, production defaults are the real DO stub and parser. */
 export interface AdminPagesDeps {
   /** Resolves the session Durable Object stub. */
   sessionStub?: (env: Env) => AdminSessionStub;
@@ -181,7 +181,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
       return c.json({ ok: true, session }, 200);
     }
     return c.redirect(
-      `/admin?flash=${encodeURIComponent(`WeWork session connected — expires ${expires}`)}`,
+      `/admin?flash=${encodeURIComponent(`WeWork session connected, expires ${expires}`)}`,
       303,
     );
   });
@@ -190,7 +190,7 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
     await stubFor(c.env).clearSession();
     if (expectsJson(c.req.raw)) return c.json({ ok: true, cleared: true }, 200);
     return c.redirect(
-      `/admin?flash=${encodeURIComponent("Stored WeWork session cleared. It is not revoked upstream — sign out on members.wework.com too.")}`,
+      `/admin?flash=${encodeURIComponent("Stored WeWork session cleared. It is not revoked upstream, sign out on members.wework.com too.")}`,
       303,
     );
   });
@@ -311,7 +311,6 @@ export interface AdminCaps {
   maxBookingsPerDay: number | null;
   maxBookingsPerWeek: number | null;
   maxCreditsPerBooking: number | null;
-  quoteTtlSeconds: number | null;
 }
 
 interface AdminStatus {
@@ -364,7 +363,6 @@ async function collectStatus(
       maxBookingsPerDay: config?.maxBookingsPerDay ?? null,
       maxBookingsPerWeek: config?.maxBookingsPerWeek ?? null,
       maxCreditsPerBooking: config?.maxCreditsPerBooking ?? null,
-      quoteTtlSeconds: config?.quoteTtlSeconds ?? null,
     },
     writeEnabled: config?.writeEnabled ?? false,
     loginStrategy: config?.loginStrategy ?? env.LOGIN_STRATEGY ?? "auto",
@@ -452,7 +450,7 @@ async function readKeyForm(request: Request): Promise<KeyForm> {
 
 /** Keeps only scopes this deployment knows, de-duplicated and in canonical order. */
 function normaliseScopes(values: readonly string[]): Scope[] {
-  return SCOPES.filter((scope) => values.includes(scope));
+  return KEY_SCOPES.filter((scope) => values.includes(scope));
 }
 
 /** Re-renders the key list with an error banner and a fresh CSRF token. */
@@ -557,81 +555,120 @@ function dashboardPage(options: {
   flash?: string;
   error?: string;
 }): string {
-  const { status } = options;
-  const sessionBanner =
-    status.session.state === "valid"
-      ? banner("ok", "WeWork session connected.")
-      : status.session.state === "expiring"
-        ? banner(
-            "warn",
-            "WeWork session expires soon; it will refresh itself if it has a refresh token.",
-          )
-        : status.session.state === "expired"
-          ? banner("err", "WeWork session expired. Reconnect below.")
-          : banner("warn", "No WeWork session stored yet. Connect one to use the API.");
+  const { status, baseUrl } = options;
+  const mcpUrl = `${baseUrl}/mcp`;
+
+  const sessionLine = (() => {
+    switch (status.session.state) {
+      case "valid":
+        return status.session.hasRefreshToken
+          ? "Connected to WeWork. The session renews itself, so you should not need to do anything here for a while."
+          : `Connected to WeWork until ${status.session.expiresAt ?? "it expires"}. There is no refresh token, so you will need to reconnect after that.`;
+      case "expiring":
+        return status.session.hasRefreshToken
+          ? "Connected to WeWork. The session is close to expiry and will renew itself."
+          : "The WeWork session expires soon and cannot renew itself. Reconnect below when it does.";
+      case "expired":
+        return "The WeWork session has expired. Reconnect below.";
+      default:
+        return "Not connected to WeWork yet. Connect below before agents can search or book.";
+    }
+  })();
+  const sessionKind =
+    status.session.state === "valid" || status.session.state === "expiring" ? "ok" : "warn";
+
+  const creditsCap =
+    status.caps.maxCreditsPerBooking === null
+      ? "unknown"
+      : status.caps.maxCreditsPerBooking < 0
+        ? "no limit"
+        : status.caps.maxCreditsPerBooking === 0
+          ? "free desks only (All Access desks and cash bookings cost no credits)"
+          : `${status.caps.maxCreditsPerBooking} credits`;
 
   return page({
-    title: "Admin",
-    heading: "weworking admin",
-    subtitle: options.baseUrl,
+    title: "Status",
+    heading: "Status",
     nav: NAV,
     body: `
 ${options.flash ? banner("ok", options.flash) : ""}
 ${options.error ? banner("err", options.error) : ""}
 ${status.configError ? banner("err", `Configuration problem: ${status.configError}`) : ""}
-${sessionBanner}
-<div class="card">
-<h2>WeWork session</h2>
+${banner(sessionKind, sessionLine)}
+${
+  status.writeEnabled
+    ? ""
+    : banner(
+        "warn",
+        "Booking is switched off (WRITE_ENABLED is false). Agents can search but cannot book or cancel. Set WRITE_ENABLED to true and redeploy to allow bookings.",
+      )
+}
+
+<h2>Connect an agent</h2>
+<p>This is the address agents connect to:</p>
+<pre>${escapeHtml(mcpUrl)}</pre>
+<p>Agents sign in one of two ways.</p>
+<ul>
+<li><a href="/admin/keys">Create an API key</a> and give it to the agent as a bearer header. This works everywhere, including scripts. For Claude Code:</li>
+</ul>
+<pre>claude mcp add --transport http weworking ${escapeHtml(mcpUrl)} \\
+  --header "Authorization: Bearer ww_..."</pre>
+<ul>
+<li>Or let the agent use OAuth: add the address above in the client, and it will send you back here to approve it. claude.ai and ChatGPT connectors only support this route.</li>
+</ul>
+<pre>claude mcp add --transport http weworking ${escapeHtml(mcpUrl)}</pre>
+
+<h2>Connect WeWork</h2>
+<p>There are two ways to give this deployment access to your WeWork account.</p>
+<ul>
+<li><strong>Automatic sign-in.</strong> Set the WEWORK_USERNAME and WEWORK_PASSWORD secrets and the worker signs in by itself. ${
+      status.secrets.weworkCredentials ? "Those secrets are set." : "Those secrets are not set."
+    }</li>
+<li><strong>Paste a session.</strong> Use this if your WeWork account has two-factor authentication, if you would rather not store your password, or if automatic sign-in is refused by WeWork's bot check. You sign in to WeWork in your own browser, copy the session with a bookmarklet, and paste it on the <a href="/admin/connect">connect page</a>. It takes about a minute and lasts for weeks.</li>
+</ul>
 ${keyValues([
-  ["State", status.session.state],
-  ["Source", status.session.source],
-  ["Obtained", status.session.obtainedAt ?? "—"],
-  ["Expires", status.session.expiresAt ?? "—"],
-  ["Refresh token", status.session.hasRefreshToken ? "yes" : "no"],
-  ["Last error", status.session.lastError ?? "—"],
+  ["Status", status.session.state],
+  [
+    "Connected via",
+    status.session.source === "login"
+      ? "automatic sign-in"
+      : status.session.source === "manual"
+        ? "pasted session"
+        : status.session.source === "refresh"
+          ? "renewed automatically"
+          : "not connected",
+  ],
+  ["Expires", status.session.expiresAt ?? "n/a"],
+  ["Renews itself", status.session.hasRefreshToken ? "yes" : "no"],
+  ...(status.session.lastError
+    ? [["Last problem", status.session.lastError] as [string, unknown]]
+    : []),
 ])}
 <form method="post" action="/admin/session/clear">
-<button type="submit">Clear stored session</button>
+<button type="submit" class="quiet">Forget the stored session</button>
 </form>
-<p class="small muted">Clearing removes it from the Durable Object. It does not revoke it at WeWork — sign out there as well.</p>
-</div>
-<div class="card">
-<h2>Safety configuration</h2>
+<p class="small muted">Forgetting it here does not sign you out of WeWork. To revoke it fully, sign out on members.wework.com too.</p>
+
+<h2>Limits</h2>
+<p>Every booking an agent makes has to fit inside these. Change them in wrangler.jsonc and redeploy.</p>
 ${keyValues([
-  ["Writes enabled", status.writeEnabled ? "yes" : "no (WRITE_ENABLED=false)"],
-  ["Max bookings / day", status.caps.maxBookingsPerDay ?? "—"],
-  ["Max bookings / week", status.caps.maxBookingsPerWeek ?? "—"],
+  ["Bookings per day", status.caps.maxBookingsPerDay ?? "unknown"],
+  ["Bookings per week", status.caps.maxBookingsPerWeek ?? "unknown"],
+  ["Credits per booking", creditsCap],
+  ["Booking allowed", status.writeEnabled ? "yes" : "no"],
+])}
+
+<h2>Setup check</h2>
+${keyValues([
+  ["Admin password", status.secrets.adminPassword ? "set" : "missing"],
+  ["Quote signing key", status.secrets.quoteKey ? "set" : "missing"],
+  ["Cookie signing key", status.secrets.cookieKey ? "set" : "missing"],
   [
-    "Max credits / booking",
-    status.caps.maxCreditsPerBooking === 0
-      ? "unlimited"
-      : (status.caps.maxCreditsPerBooking ?? "—"),
+    "WeWork username and password",
+    status.secrets.weworkCredentials ? "set" : "not set (paste a session instead)",
   ],
-  ["Quote TTL (s)", status.caps.quoteTtlSeconds ?? "—"],
-  ["Login strategy", status.loginStrategy],
 ])}
-</div>
-<div class="card">
-<h2>Secrets present</h2>
-${keyValues([
-  ["WeWork credentials", status.secrets.weworkCredentials ? "yes" : "no (paste a session instead)"],
-  ["ADMIN_PASSWORD", status.secrets.adminPassword ? "yes" : "no"],
-  ["QUOTE_SIGNING_KEY", status.secrets.quoteKey ? "yes" : "no"],
-  ["COOKIE_SIGNING_KEY", status.secrets.cookieKey ? "yes" : "no"],
-])}
-<p class="small muted">Presence only — no secret value is ever shown here.</p>
-</div>
-<div class="card">
-<h2>Links</h2>
-<ul class="small">
-<li><a href="/admin/connect">Connect a WeWork session</a></li>
-<li><a href="/admin/keys">API keys</a> — mint a key for an agent, or revoke one</li>
-<li><a href="/admin/audit">Audit log</a> (<a href="/admin/audit?format=json">JSON</a>)</li>
-<li><a href="/admin/status">This page as JSON</a></li>
-<li><a href="/healthz">/healthz</a> · <a href="/api/openapi.json">/api/openapi.json</a></li>
-<li><code>${escapeHtml(options.baseUrl)}/mcp</code> — the MCP endpoint for your client</li>
-</ul>
-</div>`,
+<p class="small muted">Only whether each secret exists is shown. Values are never displayed. The <a href="/admin/audit">audit log</a> lists every search and booking made through this deployment.</p>`,
   });
 }
 
@@ -651,7 +688,7 @@ ${options.hint ? banner("warn", options.hint) : ""}
 (including MFA, if you have it). Leave that tab open.</p>
 
 <h2>2. Install the copier</h2>
-<p>Drag this link to your bookmarks bar — it is a bookmarklet, so it runs on the WeWork tab, not here:</p>
+<p>Drag this link to your bookmarks bar, it is a bookmarklet, so it runs on the WeWork tab, not here:</p>
 <p><a class="bookmarklet" href="${escapeHtml(bookmarklet)}">Copy WeWork session</a></p>
 <p class="small muted">Your browser may block clicking it on this page (the page's content-security policy
 forbids scripts); dragging it to the bookmarks bar is the intended use. If your browser does not allow
@@ -675,7 +712,7 @@ entries your browser already stored (<code>localStorage</code> keys beginning
 <div class="card">
 <h2>What happens to the token</h2>
 <ul class="small">
-<li>It is written to this worker's SQLite Durable Object, which Cloudflare stores encrypted at rest, and is never shown again — not on this page, not in <code>/healthz</code>, not in an MCP tool result, not in a log line.</li>
+<li>It is written to this worker's SQLite Durable Object, which Cloudflare stores encrypted at rest, and is never shown again, not on this page, not in <code>/healthz</code>, not in an MCP tool result, not in a log line.</li>
 <li>Only <code>/admin/status</code>-style metadata is displayed: state, source, expiry, whether a refresh token came with it.</li>
 <li>If the paste included a refresh token, the worker renews the session on its own (lazily on a 401, and from the daily cron when under six hours remain), so you should not need this page again for weeks.</li>
 <li>Clearing the session here does not revoke it at WeWork. To fully revoke, sign out on <code>members.wework.com</code> as well.</li>
@@ -685,7 +722,7 @@ entries your browser already stored (<code>localStorage</code> keys beginning
 <h2>The automatic alternative</h2>
 <p class="small">If you set the <code>WEWORK_USERNAME</code> and <code>WEWORK_PASSWORD</code> secrets and leave
 <code>LOGIN_STRATEGY="auto"</code>, the worker performs the Auth0 login itself and you never need this page.
-That often fails from Cloudflare's datacenter IPs (Auth0 answers with a bot-protection challenge —
+That often fails from Cloudflare's datacenter IPs (Auth0 answers with a bot-protection challenge n/a
 <code>UPSTREAM_BLOCKED</code>) and cannot work at all on an account with MFA. Pasting a session always works,
 which is why it is the recommended route. Either way, once a refresh token is stored the worker stops
 logging in.</p>
@@ -708,7 +745,7 @@ function keysPage(options: {
     .map((key) => {
       const revoked = key.revokedAt !== undefined;
       const action = revoked
-        ? `<span class="muted">—</span>`
+        ? `<span class="muted">n/a</span>`
         : `<form method="post" action="/admin/keys/${encodeURIComponent(key.id)}/revoke">
 <input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
 <button type="submit">Revoke</button>
@@ -731,11 +768,11 @@ function keysPage(options: {
 <thead><tr><th>Name</th><th>Scopes</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
 <tbody>${rows}</tbody></table></div>`;
 
-  const checkboxes = SCOPES.map(
+  const checkboxes = KEY_SCOPES.map(
     (scope) =>
       `<label><input type="checkbox" name="scope" value="${escapeHtml(scope)}"${
         scope === "read" ? " checked" : ""
-      }> <span><code>${escapeHtml(scope)}</code> — ${escapeHtml(KEY_SCOPE_DESCRIPTIONS[scope])}</span></label>`,
+      }> <span><code>${escapeHtml(scope)}</code>: ${escapeHtml(KEY_SCOPE_DESCRIPTIONS[scope])}</span></label>`,
   ).join("");
 
   return page({
@@ -763,6 +800,9 @@ mint a new one and revoke the old one if you lose it. Revoking takes effect on t
 }
 
 /** What each scope buys, in the operator's terms. */
+/** Scopes a key can carry. `admin` grants nothing beyond `write`, so it is not offered. */
+const KEY_SCOPES: readonly Scope[] = ["read", "write"];
+
 const KEY_SCOPE_DESCRIPTIONS: Record<Scope, string> = {
   read: "search desks, list locations and bookings",
   write: "book and cancel desks, within the configured caps",
@@ -831,8 +871,8 @@ function auditPage(rows: AuditRow[], limit: number): string {
 <td>${escapeHtml(row.actor)}</td>
 <td>${escapeHtml(row.tool)}</td>
 <td>${escapeHtml(row.error ? `${row.outcome}: ${row.error}` : row.outcome)}</td>
-<td>${escapeHtml(row.bookingId ?? "—")}</td>
-<td>${escapeHtml(row.credits ?? "—")}</td>
+<td>${escapeHtml(row.bookingId ?? "n/a")}</td>
+<td>${escapeHtml(row.credits ?? "n/a")}</td>
 <td>${row.dryRun ? "yes" : "no"}</td>
 <td><code>${escapeHtml(JSON.stringify(row.args))}</code></td>
 </tr>`,
