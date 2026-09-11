@@ -158,6 +158,8 @@ export interface Booking {
   reservationId?: string;
   locationId: string;
   locationName: string;
+  /** e.g. `"Shared workspace"`. */
+  spaceName?: string;
   address?: string;
   date: string;
   /** Local wall-clock start, e.g. `"2026-09-14T09:00:00"`. */

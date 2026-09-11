@@ -545,12 +545,39 @@ export class WeWorkClient implements WeWorkApi {
 
     const items = arrayAt(body, "bookings", "upcomingBookings", "appUpcomingBookings");
     const out: Booking[] = [];
+    let unmapped = 0;
+    let outsideWindow = 0;
     for (const item of items) {
       if (typeof item !== "object" || item === null) continue;
       const mapped = mapBooking(item as RawUpcomingBooking);
-      if (!mapped) continue;
-      if (mapped.date < from || mapped.date > to) continue;
+      if (!mapped) {
+        unmapped += 1;
+        continue;
+      }
+      if (mapped.date < from || mapped.date > to) {
+        outsideWindow += 1;
+        continue;
+      }
       out.push(mapped);
+    }
+    if (out.length === 0) {
+      // Keys only, never values: enough to tell "no bookings" from "a shape we do
+      // not read yet". The bookings list is the one endpoint never seen live with
+      // data in it, so this stays on until a real payload has been matched.
+      const first = items[0];
+      console.warn("list bookings: nothing mapped", {
+        window: { from, to },
+        topLevelKeys: body && typeof body === "object" ? Object.keys(body as object) : typeof body,
+        items: items.length,
+        unmapped,
+        outsideWindow,
+        firstItemKeys:
+          first && typeof first === "object" ? Object.keys(first as object) : typeof first,
+        firstItemDates:
+          first && typeof first === "object"
+            ? describeDates(first as Record<string, unknown>)
+            : undefined,
+      });
     }
     out.sort((a, b) => a.startLocal.localeCompare(b.startLocal));
     return out;
@@ -1098,6 +1125,15 @@ export function monthBoundsUtc(reference: Date): { start: string; end: string } 
     // Day 0 of the next month is the last day of this one.
     end: isoDateUtc(Date.UTC(year, month + 1, 0)),
   };
+}
+
+/** The date-looking string fields of one raw item, for diagnostics (no ids, no names). */
+function describeDates(item: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(item)) {
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) out[key] = value;
+  }
+  return out;
 }
 
 /** `"YYYY-MM-DD"` for an epoch-ms instant, in UTC. */

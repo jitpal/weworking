@@ -5,8 +5,13 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mapLocation, mapProfile, mapWorkspace } from "../../src/wework/mappers";
-import type { RawLocation, RawProfileResponse, RawWorkspace } from "../../src/wework/raw-types";
+import { mapBooking, mapLocation, mapProfile, mapWorkspace } from "../../src/wework/mappers";
+import type {
+  RawLocation,
+  RawProfileResponse,
+  RawUpcomingBooking,
+  RawWorkspace,
+} from "../../src/wework/raw-types";
 
 const LIVE_LOCATION: RawLocation = {
   uuid: "20242b8b-0000-4000-8000-000000000001",
@@ -84,5 +89,56 @@ describe("live profile", () => {
     expect(profile.membershipType).toBe("On Demand");
     expect(profile.homeLocationId).toBe("cec7a8c2-0000-4000-8000-000000000001");
     expect(profile.name).toBe("Test Member");
+  });
+});
+
+describe("live upcoming booking item", () => {
+  it("reads startDate/endDate as local wall clock, creditCost, the kube reference and the deadline", () => {
+    const raw: RawUpcomingBooking = {
+      bookingId: "dddd4444-0000-4000-8000-000000000001",
+      franchiseBookingExtReference: "",
+      bookingMethod: 1,
+      spaceType: 4,
+      bookingType: 4,
+      isUpcomingReservation: true,
+      bookingDate: "2026-09-11T06:00:00Z",
+      startDate: "2026-09-11T06:00:00Z",
+      endDate: "2026-09-11T23:59:00Z",
+      spaceName: "Shared workspace",
+      spaceTypeName: "Coworking",
+      spaceId: "519f596a-0000-4000-8000-000000000001",
+      creditCost: 0,
+      status: "Confirmed",
+      modificationDeadlineTime: "2026-09-11T12:13:12.000Z",
+      location: LIVE_LOCATION,
+      kubeBookingExternalReference: "RSV-0001",
+      spaceExternalReference: "15769",
+      isCancelled: false,
+      bookingCurrency: "GBP",
+      bookingCurrencySymbol: "£",
+    } as RawUpcomingBooking;
+    const booking = mapBooking(raw);
+    expect(booking?.bookingId).toBe("dddd4444-0000-4000-8000-000000000001");
+    expect(booking?.startLocal).toBe("2026-09-11T06:00:00");
+    expect(booking?.endLocal).toBe("2026-09-11T23:59:00");
+    expect(booking?.date).toBe("2026-09-11");
+    expect(booking?.credits).toBe(0);
+    expect(booking?.status).toBe("confirmed");
+    expect(booking?.reservationId).toBe("RSV-0001");
+    expect(booking?.spaceName).toBe("Shared workspace");
+    expect(booking?.cancelDeadlineLocal).toBe("2026-09-11T12:13:12");
+    expect(booking?.locationName).toBe("10 York Rd");
+    expect(booking?.timezone).toBe("Europe/London");
+  });
+
+  it("marks isCancelled bookings as cancelled", () => {
+    const booking = mapBooking({
+      bookingId: "b",
+      startDate: "2026-09-11T06:00:00Z",
+      endDate: "2026-09-11T23:59:00Z",
+      isCancelled: true,
+      location: LIVE_LOCATION,
+    } as RawUpcomingBooking);
+    expect(booking?.status).toBe("cancelled");
   });
 });

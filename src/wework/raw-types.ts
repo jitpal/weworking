@@ -320,6 +320,21 @@ export interface RawUpcomingBooking {
   spaceName?: unknown;
   timeZone?: unknown;
   timezone?: unknown;
+  /** Live shape (2026-09): `startDate`/`endDate` are local wall clock stamped `Z`. */
+  startDate?: unknown;
+  endDate?: unknown;
+  bookingDate?: unknown;
+  creditCost?: unknown;
+  isCancelled?: unknown;
+  isPendingApproval?: unknown;
+  /** Live: also local wall clock stamped `Z`; the same-day window is 5 minutes after creation. */
+  modificationDeadlineTime?: unknown;
+  kubeBookingExternalReference?: unknown;
+  spaceExternalReference?: unknown;
+  spaceTypeName?: unknown;
+  bookingCurrency?: unknown;
+  bookingCurrencySymbol?: unknown;
+  spaceCapacity?: unknown;
 }
 
 /** The `mailParams` block on a cancellation. `workspaceType` 1 is a shared desk. */

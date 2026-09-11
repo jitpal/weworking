@@ -716,11 +716,14 @@ export function mapBooking(raw: RawUpcomingBooking): Booking | undefined {
   if (!bookingId) return undefined;
 
   // Local wall clock stamped Z: re-anchor, never convert.
+  // Live field names are `startDate`/`endDate`; the others are older spellings.
   const startLocal = first(
+    wallClockFromLocalZStamp(raw.startDate),
     wallClockFromLocalZStamp(raw.startTime),
     wallClockFromLocalZStamp(raw.StartTime),
   );
   const endLocal = first(
+    wallClockFromLocalZStamp(raw.endDate),
     wallClockFromLocalZStamp(raw.endTime),
     wallClockFromLocalZStamp(raw.EndTime),
   );
@@ -737,20 +740,36 @@ export function mapBooking(raw: RawUpcomingBooking): Booking | undefined {
     startLocal,
     endLocal,
     timezone,
-    status: mapBookingStatus(first(str(raw.status), str(raw.bookingStatus))),
-    credits: first(num(raw.credits), num(raw.creditsUsed), num(raw.creditPrice), 0) ?? 0,
+    status:
+      raw.isCancelled === true
+        ? "cancelled"
+        : raw.isPendingApproval === true
+          ? "pending"
+          : mapBookingStatus(first(str(raw.status), str(raw.bookingStatus))),
+    credits:
+      first(num(raw.creditCost), num(raw.credits), num(raw.creditsUsed), num(raw.creditPrice), 0) ??
+      0,
     // The cancel endpoint needs fields this domain type does not carry, so the raw
     // item rides along. `BookingService` strips it before anything reaches an agent.
     raw,
   };
 
-  const reservationId = first(str(raw.reservationId), str(raw.ReservationID));
+  const reservationId = first(
+    str(raw.reservationId),
+    str(raw.ReservationID),
+    str(raw.kubeBookingExternalReference),
+  );
   if (reservationId) booking.reservationId = reservationId;
+
+  const spaceName = first(str(raw.spaceName), str(raw.spaceTypeName));
+  if (spaceName) booking.spaceName = spaceName;
 
   const address = location?.address;
   if (address) booking.address = address;
 
+  // Live: `modificationDeadlineTime` is local wall clock stamped `Z`, like the times.
   const deadline = first(
+    wallClockFromLocalZStamp(raw.modificationDeadlineTime),
     wallClockFromLocalZStamp(raw.cancellationDeadline),
     wallClockFromLocalZStamp(raw.cancelBy),
   );
