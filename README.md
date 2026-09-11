@@ -77,7 +77,7 @@ Six tools: `whoami`, `list_locations`, `search_availability`, `create_booking`, 
 
 ## A personal project
 
-This is built for my own use and shared as is. Issues are off and pull requests are closed automatically. Fork it and change whatever you like; the license allows it. Security problems can still be reported privately, see [SECURITY.md](SECURITY.md).
+This is built for my own use and shared as is. Bug reports are welcome as issues. Pull requests are not accepted and are closed automatically; fork it and change whatever you like, the license allows it. Security problems can be reported privately, see [SECURITY.md](SECURITY.md).
 
 ## Thanks
 

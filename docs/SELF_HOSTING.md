@@ -89,7 +89,7 @@ Plain values in `wrangler.jsonc` under `vars`. Edit and redeploy to change them.
 
 ## 4. Deploy
 
-Deployment is manual and runs from your machine. There is no GitHub Actions deploy workflow, and this repo never needs `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` stored in GitHub; `npm run deploy` uses the wrangler login from step 1 and your `wrangler.local.jsonc`.
+Deployment is manual and runs from your machine. There is no continuous integration or deploy automation in this repo, and it never needs `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` stored in GitHub; `npm run deploy` uses the wrangler login from step 1 and your `wrangler.local.jsonc`.
 
 ```sh
 npm run deploy

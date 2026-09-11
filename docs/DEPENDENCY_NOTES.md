@@ -438,5 +438,5 @@ partially, through `importOriginal`.
 `typescript@7.0.2` is the current latest, but this repo pins **`typescript@^5.9`**
 (5.9.3 installed). TS 7 is the native-port release line, and Biome 2.5 and the
 `@cloudflare/vitest-pool-workers` 0.22 type surface are only tested against 5.x.
-Dependabot is told not to offer the major (`.github/dependabot.yml`). Revisit once the
+There is no automated dependency bumping; bump by hand and revisit once the
 Cloudflare and Biome toolchains declare TS 7 support.

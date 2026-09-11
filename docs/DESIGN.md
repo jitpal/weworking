@@ -76,7 +76,7 @@ The quote lifetime is not configurable. It is the `QUOTE_TTL_SECONDS` constant i
 README.md LICENSE SECURITY.md
 package.json tsconfig.json vitest.config.ts biome.jsonc wrangler.jsonc worker-configuration.d.ts
 .gitignore .dev.vars.example .editorconfig .nvmrc
-.github/workflows/ci.yml  .github/dependabot.yml  .github/ISSUE_TEMPLATE/
+.github/PULL_REQUEST_TEMPLATE.md  .github/workflows/close-pull-requests.yml  .github/ISSUE_TEMPLATE/bug_report.md
 docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md LOCATION_AND_TIME.md
       WEWORK_API.md THREAT_MODEL.md DEPENDENCY_NOTES.md
 skills/book-a-desk/SKILL.md  (plain Agent Skill; no plugin manifest)
