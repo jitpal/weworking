@@ -63,12 +63,12 @@ sequenceDiagram
     W-->>A: options, prices, booking ids
 ```
 
-Six tools: `whoami`, `list_locations`, `search_availability`, `create_booking`, `list_bookings`, `cancel_booking`. The typical flow is `search_availability` by city, coordinates, or building, show the user the options with prices, get a yes, `create_booking` with the quote. A REST mirror lives under `/api` with an OpenAPI document. Details in [docs/API.md](docs/API.md).
+Six tools: `whoami`, `list_locations`, `search_availability`, `create_booking`, `list_bookings`, `cancel_booking`. The whole loop, search to booking to cancellation, is verified live on an All Access account. The typical flow is `search_availability` by city, coordinates, or building, show the user the options with prices, get a yes, `create_booking` with the quote. A REST mirror lives under `/api` with an OpenAPI document. Details in [docs/API.md](docs/API.md).
 
 ## What it does not do
 
 - Meeting rooms and private offices. Hot desks only.
-- Pay-as-you-go (On Demand) bookings are untested. Searching and pricing in local currency is verified on an On Demand account, and the booking path is the same code, but no cash booking has been made yet. Set `MAX_CASH_PER_BOOKING` before trying.
+- Pay-as-you-go (On Demand) bookings are untested. Searching and pricing in local currency is verified on an On Demand account, and the booking path is the same code that is verified on All Access, but no cash booking has been made yet. Set `MAX_CASH_PER_BOOKING` before trying.
 - More than one WeWork account per deployment. This is by design.
 - Automatic sign-in for accounts with two-factor authentication. Paste a session instead.
 

@@ -562,8 +562,7 @@ export class WeWorkClient implements WeWorkApi {
     }
     if (out.length === 0) {
       // Keys only, never values: enough to tell "no bookings" from "a shape we do
-      // not read yet". The bookings list is the one endpoint never seen live with
-      // data in it, so this stays on until a real payload has been matched.
+      // not read yet" if WeWork renames fields again.
       const first = items[0];
       console.warn("list bookings: nothing mapped", {
         window: { from, to },
