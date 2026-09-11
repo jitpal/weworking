@@ -377,6 +377,19 @@ export class WeWorkClient implements WeWorkApi {
       "workspaces",
     );
 
+    if (workspaces.length === 0) {
+      // Keys only: enough to tell "nothing available" from "shape we do not read".
+      const top = body && typeof body === "object" ? Object.keys(body as object) : typeof body;
+      const inner = (body as { getSharedWorkspaces?: unknown } | null)?.getSharedWorkspaces;
+      console.warn("get-spaces returned no workspaces", {
+        locationIds: args.locationIds.length,
+        topLevelKeys: top,
+        sharedWorkspacesKeys:
+          inner && typeof inner === "object" ? Object.keys(inner) : typeof inner,
+        totalCount: (inner as { totalCount?: unknown } | undefined)?.totalCount,
+      });
+    }
+
     const out: SpaceAvailability[] = [];
     for (const value of workspaces) {
       if (typeof value !== "object" || value === null) continue;

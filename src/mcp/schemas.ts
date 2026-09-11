@@ -274,6 +274,7 @@ export const searchAvailabilityOutput = z.looseObject({
     .string()
     .optional()
     .describe("When every quote in this result expires, ISO-8601 UTC."),
+  note: z.string().optional().describe("Present when results is empty: why, and what to try next."),
 });
 
 export const createBookingOutput = z.looseObject({

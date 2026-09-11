@@ -123,12 +123,19 @@ export async function runSearchAvailability(
 
   const results = await service.searchAvailability(args);
   const quoteExpiresAt = quoteExpiry(results);
-  const structured: { results: AvailabilityResult[]; quoteExpiresAt?: string } = { results };
+  const structured: { results: AvailabilityResult[]; quoteExpiresAt?: string; note?: string } = {
+    results,
+  };
   if (quoteExpiresAt) structured.quoteExpiresAt = quoteExpiresAt;
+  // Live-verified: WeWork answers with an empty list (totalCount 0) for buildings
+  // where this membership cannot book a shared desk, not with an error. Say so, or
+  // an agent will keep retrying dates.
+  const emptyNote = `WeWork listed no bookable shared desks for this account at the requested building(s) on ${input.date}. That usually means the membership cannot book there (pay-as-you-go accounts are often limited to certain regions) rather than that the desks are full. Try a different building or city before trying other dates.`;
+  if (results.length === 0) structured.note = emptyNote;
 
   const text =
     results.length === 0
-      ? `No desks available on ${input.date}. Try another date or another building.`
+      ? emptyNote
       : [
           `${results.length} option(s) on ${input.date}; confirm one with the user before booking.`,
           ...results.map((result, index) => `${index + 1}. ${result.summary}`),

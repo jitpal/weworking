@@ -434,11 +434,19 @@ export function mapLocation(
   const currency = str(raw.currency);
   if (currency && /^[A-Z]{3}$/.test(currency)) location.currency = currency;
 
-  const upstreamDistance = first(num(raw.distanceInKm), num(raw.distance));
-  if (upstreamDistance !== undefined) {
-    location.distanceKm = Math.round(upstreamDistance * 100) / 100;
-  } else if (options.origin && latitude !== undefined && longitude !== undefined) {
+  // Live-verified: upstream `distance` is in metres (327.37 for a building 330 m
+  // from the search point), and on a city search it is measured from some default
+  // point and means nothing. Our own great-circle figure is preferred whenever a
+  // search origin exists; the upstream number is only a fallback, converted to km.
+  if (options.origin && latitude !== undefined && longitude !== undefined) {
     location.distanceKm = distanceKm(options.origin, { lat: latitude, lng: longitude });
+  } else if (options.origin) {
+    const metres = num(raw.distance);
+    const upstreamKm = first(
+      num(raw.distanceInKm),
+      metres === undefined ? undefined : metres / 1000,
+    );
+    if (upstreamKm !== undefined) location.distanceKm = Math.round(upstreamKm * 100) / 100;
   }
 
   return location;
