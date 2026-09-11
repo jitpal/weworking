@@ -63,10 +63,11 @@ cd weworking
 npm install
 ```
 
-Create the KV namespace the OAuth provider needs, then paste the printed id into the `OAUTH_KV` binding in `wrangler.jsonc` (it ships as a `REPLACE_ME...` placeholder):
+Create the KV namespace the OAuth provider needs, then put the printed id into the `OAUTH_KV` binding. The committed `wrangler.jsonc` ships with a `REPLACE_ME...` placeholder so it stays generic. Copy it to `wrangler.local.jsonc` (gitignored) and edit that copy; every `npm run` script uses the local file when it exists.
 
 ```sh
 npx wrangler kv namespace create OAUTH_KV
+cp wrangler.jsonc wrangler.local.jsonc   # then paste the id into the copy
 ```
 
 Set the secrets. Each line prompts for a value:

@@ -7,3 +7,6 @@ dist/
 .DS_Store
 *.log
 coverage/
+
+# Per-deployment wrangler config with real namespace ids (see scripts/wrangler.mjs)
+wrangler.local.jsonc

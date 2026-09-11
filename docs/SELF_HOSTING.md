@@ -27,7 +27,13 @@ The OAuth provider stores clients, grants, and tokens in KV. The repo ships with
 npx wrangler kv namespace create OAUTH_KV
 ```
 
-Copy the printed `id` into `wrangler.jsonc`:
+Copy `wrangler.jsonc` to `wrangler.local.jsonc` and put the printed `id` into the copy. The local file is gitignored, and `npm run dev`, `npm run deploy`, and `npm run types` all use it when it exists, so the committed config keeps its placeholder and your fork stays mergeable:
+
+```sh
+cp wrangler.jsonc wrangler.local.jsonc
+```
+
+In `wrangler.local.jsonc`:
 
 ```jsonc
 "kv_namespaces": [
@@ -35,7 +41,7 @@ Copy the printed `id` into `wrangler.jsonc`:
 ]
 ```
 
-If you leave the `REPLACE_ME...` placeholder in place, deploy fails with an unknown-namespace error. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
+If the placeholder is still in whichever config is used, deploy fails with an unknown-namespace error. You can also edit `wrangler.jsonc` directly if you never intend to contribute changes back. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
 
 ## 3. Set secrets
 

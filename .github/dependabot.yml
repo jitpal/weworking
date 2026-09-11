@@ -8,6 +8,18 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      # @cloudflare/vitest-pool-workers pins vitest 4.x; bump them together by hand.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
+      # Biome and the workers types are only tested on TypeScript 5.x.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # agents pins these exact versions; they move with agents.
+      - dependency-name: "@modelcontextprotocol/*"
+        update-types: ["version-update:semver-major"]
     groups:
       cloudflare:
         patterns:
