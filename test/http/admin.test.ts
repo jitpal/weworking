@@ -69,6 +69,7 @@ function fakeStub(overrides: Partial<AdminSessionStub> = {}) {
     getSessionInfo: vi.fn(async () => VALID_SESSION),
     setSession: vi.fn(async (_record: Omit<SessionRecord, "obtainedAt">) => {}),
     clearSession: vi.fn(async () => {}),
+    getAccessToken: vi.fn(async () => ({ accessToken: "tok", userUuid: "user-1" })),
     createApiKey: vi.fn(async (_input: unknown) => {}),
     listApiKeys: vi.fn(async (): Promise<ApiKeySummary[]> => [KEY]),
     revokeApiKey: vi.fn(async (_id: string) => true),
@@ -508,6 +509,86 @@ describe("POST /admin/session", () => {
     );
     expect(response.status).toBe(413);
     expect(parseManualSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /admin/session/login", () => {
+  it("signs in through the durable object and reports the new session", async () => {
+    const stub = fakeStub();
+    const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin");
+    const response = await app.request(
+      "/admin/session/login",
+      {
+        method: "POST",
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csrf: form.csrf }),
+      },
+      env,
+    );
+    expect(response.status).toBe(303);
+    expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain(
+      "Signed in to WeWork",
+    );
+    expect(stub.getAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns an upstream refusal into a readable error on the status page", async () => {
+    const stub = fakeStub({
+      getAccessToken: vi.fn(async () => {
+        throw new AppError("UPSTREAM_BLOCKED", "Auth0 requires verification for this login.", {
+          hint: "Paste a session at /admin/connect instead.",
+        });
+      }),
+    });
+    const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin");
+    const response = await app.request(
+      "/admin/session/login",
+      {
+        method: "POST",
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csrf: form.csrf }),
+      },
+      env,
+    );
+    expect(response.status).toBe(303);
+    const location = decodeURIComponent(response.headers.get("Location") ?? "");
+    expect(location).toContain("Sign-in failed");
+    expect(location).toContain("requires verification");
+    expect(location).toContain("/admin/connect");
+  });
+
+  it("refuses without the CSRF token", async () => {
+    const stub = fakeStub();
+    const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin");
+    const response = await app.request(
+      "/admin/session/login",
+      {
+        method: "POST",
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({}),
+      },
+      env,
+    );
+    expect(response.status).toBe(403);
+    expect(stub.getAccessToken).not.toHaveBeenCalled();
   });
 });
 

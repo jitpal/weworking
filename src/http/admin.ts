@@ -65,6 +65,10 @@ export interface AdminSessionStub {
   getSessionInfo(): Promise<SessionInfo>;
   setSession(record: Omit<SessionRecord, "obtainedAt">): Promise<void>;
   clearSession(): Promise<void>;
+  getAccessToken(opts?: {
+    minTtlSec?: number;
+    force?: boolean;
+  }): Promise<{ accessToken: string; userUuid: string }>;
   listAudit(opts?: { limit?: number }): Promise<AuditRow[]>;
   createApiKey(input: { id: string; name: string; sha256: string; scopes: Scope[] }): Promise<void>;
   listApiKeys(): Promise<ApiKeySummary[]>;
@@ -215,6 +219,35 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
     if (wantsJson) return c.json({ ok: true, cleared: true }, 200);
     return c.redirect(
       `/admin?flash=${encodeURIComponent("Stored WeWork session cleared. It is not revoked upstream, sign out on members.wework.com too.")}`,
+      303,
+    );
+  });
+
+  app.post("/admin/session/login", requireAdmin, async (c) => {
+    const wantsJson = expectsJson(c.req.raw);
+    const form = await readFormish(c.req.raw);
+    if (!(await verifyCsrfToken(c.req.raw, c.env, SESSION_CSRF_PURPOSE, form.csrf))) {
+      return wantsJson
+        ? csrfJsonFailure(c)
+        : dashboardCsrfFailure(c, await collectStatus(c.env, stubFor));
+    }
+    try {
+      // Sign-in is otherwise lazy (first tool call). The operator gets a button so
+      // they can find out now whether automatic sign-in works for their account.
+      await stubFor(c.env).getAccessToken({ minTtlSec: 120 });
+    } catch (error) {
+      const body = toErrorBody(error);
+      const hint = body.error.hint ? ` ${body.error.hint}` : "";
+      if (wantsJson) return c.json(body, (isAppError(error) ? error.status : 502) as 502);
+      return c.redirect(
+        `/admin?error=${encodeURIComponent(`Sign-in failed: ${body.error.message}${hint}`)}`,
+        303,
+      );
+    }
+    const session = await stubFor(c.env).getSessionInfo();
+    if (wantsJson) return c.json({ ok: true, session }, 200);
+    return c.redirect(
+      `/admin?flash=${encodeURIComponent(`Signed in to WeWork. The session lasts until ${session.expiresAt ?? "it expires"}${session.hasRefreshToken ? " and renews itself" : ""}.`)}`,
       303,
     );
   });
@@ -731,6 +764,16 @@ ${keyValues([
     ? [["Last problem", status.session.lastError] as [string, unknown]]
     : []),
 ])}
+${
+  status.secrets.weworkCredentials &&
+  (status.session.state === "none" || status.session.state === "expired")
+    ? `<form method="post" action="/admin/session/login">
+<input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
+<button type="submit">Sign in to WeWork now</button>
+</form>
+<p class="small muted">Sign-in otherwise happens on the first request an agent makes. This does it now and shows whether WeWork accepted it.</p>`
+    : ""
+}
 <form method="post" action="/admin/session/clear">
 <input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
 <button type="submit" class="quiet">Forget the stored session</button>
