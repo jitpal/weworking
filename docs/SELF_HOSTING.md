@@ -41,7 +41,7 @@ In `wrangler.local.jsonc`:
 ]
 ```
 
-If the placeholder is still in whichever config is used, deploy fails with an unknown-namespace error. You can also edit `wrangler.jsonc` directly if you never intend to contribute changes back. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
+If the placeholder is still in whichever config is used, deploy fails with an unknown-namespace error. You can also edit `wrangler.jsonc` directly if you do not mind pulling future changes over it. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
 
 ## 3. Set secrets
 

@@ -16,7 +16,7 @@ Naming: every request parameter is `snake_case`, whether it is an MCP tool argum
 - **Dates** are `YYYY-MM-DD` in the building's local time zone. **Times** passed in are local `HH:MM` at the building, rounded to 30-minute boundaries.
 - Responses carry both local and UTC instants: `startLocal`/`endLocal` (local wall clock) and `startUtc`/`endUtc` (true UTC, `Z`). Show the user local times.
 - **Credits** are WeWork credits, not currency. `cashPrice` appears only when the upstream offers one.
-- **`space_type`** is `desk` | `meeting_room` | `private_office`. Only `desk` is implemented; anything else returns `UNSUPPORTED_SPACE_TYPE`. See [CAPTURE_GUIDE.md](CAPTURE_GUIDE.md).
+- **`space_type`** is `desk` | `meeting_room` | `private_office`. Only `desk` is implemented; anything else returns `UNSUPPORTED_SPACE_TYPE`.
 - **Quotes** are opaque signed strings from `search_availability`. `create_booking` takes nothing else to identify a space. They expire after ten minutes.
 - **Idempotency**: pass `idempotency_key` (any unique string, a UUID is ideal) on writes. A replay with the same key returns the stored result instead of acting again.
 - Every tool result also includes a human-readable `summary` string; MCP returns it as the `content[0].text`.
@@ -313,7 +313,7 @@ Every failure, on both front doors, uses one envelope:
 | `NOT_AVAILABLE` | 409 | the space was taken between the search and the booking | search again and offer the user the new options |
 | `BOOKING_REFUSED` | 409 | WeWork accepted the request but refused the booking (no credits, policy, overlap) | report the reason. Nothing was charged. Do not retry blindly |
 | `NOT_FOUND` | 404 | unknown booking id or location id | re-list and use an id from the result |
-| `UNSUPPORTED_SPACE_TYPE` | 400 | meeting rooms and private offices are not implemented | tell the user hot desks only, and point at `docs/CAPTURE_GUIDE.md` if they want to help |
+| `UNSUPPORTED_SPACE_TYPE` | 400 | meeting rooms and private offices are not implemented | tell the user hot desks only |
 | `VALIDATION` | 400 | bad or missing parameters | read `message`, fix the arguments, retry once |
 
 Errors never contain tokens, cookies, passwords, or raw upstream auth payloads.

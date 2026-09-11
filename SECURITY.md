@@ -30,7 +30,7 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this sof
 - Vulnerabilities in WeWork's own services. Report those to WeWork.
 - Anything requiring you to already hold `ADMIN_PASSWORD` or access to the deployer's Cloudflare account.
 - Auth0 bot detection blocking automatic login. That is a documented limitation.
-- WeWork changing or removing an endpoint. Open a normal `api_change` issue.
+- WeWork changing or removing an endpoint. That is breakage, not a vulnerability; it will be fixed when I next touch the code.
 - Denial of service by spending your own credits or exhausting your own Worker quota.
 - Missing hardening with no stated attack path (header nitpicks, version disclosure in `/healthz`).
 - Results from a scanner with no demonstrated impact.

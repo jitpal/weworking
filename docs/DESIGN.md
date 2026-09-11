@@ -15,8 +15,7 @@ access token issued by this worker or an API key the operator minted at `/admin/
 WeWork session tokens live in one SQLite Durable Object and never leave it.
 
 Phase 1 books hot desks only. Every schema already carries `space_type`, so meeting
-rooms and private offices can land without a new schema version; see
-[CAPTURE_GUIDE.md](./CAPTURE_GUIDE.md).
+rooms and private offices could land without a new schema version.
 
 ## 2. Stack
 
@@ -74,12 +73,12 @@ The quote lifetime is not configurable. It is the `QUOTE_TTL_SECONDS` constant i
 ## 4. Repo layout
 
 ```
-README.md LICENSE CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md
+README.md LICENSE SECURITY.md
 package.json tsconfig.json vitest.config.ts biome.jsonc wrangler.jsonc worker-configuration.d.ts
 .gitignore .dev.vars.example .editorconfig .nvmrc
 .github/workflows/ci.yml  .github/dependabot.yml  .github/ISSUE_TEMPLATE/
 docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md LOCATION_AND_TIME.md
-      WEWORK_API.md THREAT_MODEL.md CAPTURE_GUIDE.md DEPENDENCY_NOTES.md
+      WEWORK_API.md THREAT_MODEL.md DEPENDENCY_NOTES.md
 skills/book-a-desk/SKILL.md  (plain Agent Skill; no plugin manifest)
 scripts/ record-fixture.mjs (manual, live, redacts)  wrangler.mjs (config picker)
 src/

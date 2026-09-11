@@ -301,7 +301,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
         "UNSUPPORTED_SPACE_TYPE",
         `space_type "${spaceType}" is not implemented; this build books hot desks only.`,
         {
-          hint: "Tell the user only hot desks (space_type 'desk') can be booked. Contributors can add room support by capturing the upstream calls — see docs/CAPTURE_GUIDE.md.",
+          hint: "Tell the user only hot desks (space_type 'desk') can be booked.",
         },
       );
     }

@@ -7,7 +7,7 @@ description: Search for and book a WeWork hot desk through the weworking MCP ser
 
 Booking spends the user's real monthly credits. Treat every `create_booking` and `cancel_booking` as an action that needs explicit permission, every time.
 
-Hot desks only. If the user asks for a meeting room or private office, say it is not supported yet and point them at `docs/CAPTURE_GUIDE.md` in the repository if they want to help add it.
+Hot desks only. If the user asks for a meeting room or private office, say it is not supported.
 
 ## Workflow
 

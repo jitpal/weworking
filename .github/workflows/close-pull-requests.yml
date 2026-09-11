@@ -1,0 +1,24 @@
+name: Close pull requests
+
+# This repository does not accept contributions. Every pull request from anyone
+# other than Dependabot is closed with a short note pointing at the README.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment and close
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Thanks, but this project does not accept pull requests. It is a personal tool shared as is; please fork it instead. See the README."
+          gh pr close "$PR" --repo "$GITHUB_REPOSITORY"

@@ -173,14 +173,14 @@ describe("GET /api/availability", () => {
     expect(app.harness.api.calls).toEqual([]);
   });
 
-  it("maps UNSUPPORTED_SPACE_TYPE to 400 with the capture-guide hint", async () => {
+  it("maps UNSUPPORTED_SPACE_TYPE to 400 with the hot-desks-only hint", async () => {
     const app = buildApp();
     const { status, body } = await app.json<ErrorBody>(
       "/api/availability?location_id=loc-poultry&date=2026-09-21&space_type=meeting_room",
     );
     expect(status).toBe(400);
     expect(body.error.code).toBe("UNSUPPORTED_SPACE_TYPE");
-    expect(body.error.hint).toContain("CAPTURE_GUIDE");
+    expect(body.error.hint).toContain("hot desks");
   });
 });
 

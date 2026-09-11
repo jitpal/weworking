@@ -1,14 +1,16 @@
 # weworking
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jitpal/weworking)
-
 Lets an AI agent book your WeWork desk. I have an All Access membership, and every morning my agent reads my calendar, works out which building makes sense for the day, and books a desk there. This is the small Cloudflare Worker that makes that possible: it talks to WeWork with your own account and exposes six tools over MCP that any agent can use.
 
 Unofficial. Not affiliated with WeWork. It uses the same private endpoints the WeWork web app uses, they can change without notice, and you are responsible for your own account and for WeWork's terms. See [the threat model](docs/THREAT_MODEL.md) before deploying.
 
 ## Get started
 
-**1. Deploy.** The button above clones this repo into your GitHub, creates the storage it needs, asks for the three required secrets, and deploys. Or from a terminal:
+**1. Deploy.**
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jitpal/weworking)
+
+The button clones this repo into your GitHub, creates the storage it needs, asks for the three required secrets, and deploys. Or from a terminal:
 
 ```sh
 git clone https://github.com/jitpal/weworking.git && cd weworking && npm install
@@ -65,13 +67,17 @@ Six tools: `whoami`, `list_locations`, `search_availability`, `create_booking`, 
 
 ## What it does not do
 
-- Meeting rooms and private offices. Hot desks only for now. If you can help capture the requests, see [docs/CAPTURE_GUIDE.md](docs/CAPTURE_GUIDE.md).
+- Meeting rooms and private offices. Hot desks only.
 - More than one WeWork account per deployment. This is by design.
 - Automatic sign-in for accounts with two-factor authentication. Paste a session instead.
 
 ## Docs
 
-[Self-hosting and troubleshooting](docs/SELF_HOSTING.md) · [Connecting clients](docs/CLIENTS.md) · [API reference](docs/API.md) · [Location and time rules](docs/LOCATION_AND_TIME.md) · [Threat model](docs/THREAT_MODEL.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+[Self-hosting and troubleshooting](docs/SELF_HOSTING.md) · [Connecting clients](docs/CLIENTS.md) · [API reference](docs/API.md) · [Location and time rules](docs/LOCATION_AND_TIME.md) · [Threat model](docs/THREAT_MODEL.md) · [Security policy](SECURITY.md)
+
+## A personal project
+
+This is built for my own use and shared as is. Issues are off and pull requests are closed automatically. Fork it and change whatever you like; the license allows it. Security problems can still be reported privately, see [SECURITY.md](SECURITY.md).
 
 ## Thanks
 

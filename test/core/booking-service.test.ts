@@ -387,7 +387,7 @@ describe("searchAvailability", () => {
     expect(harness.api.calls.filter((c) => c.method === "getSpaces")).toHaveLength(1);
   });
 
-  it("refuses meeting rooms with a pointer to the capture guide", async () => {
+  it("refuses meeting rooms with a plain hot-desks-only hint", async () => {
     const harness = createHarness();
     try {
       await harness.service.searchAvailability({
@@ -398,7 +398,7 @@ describe("searchAvailability", () => {
       throw new Error("should have thrown");
     } catch (err) {
       expect(isAppError(err) && err.code).toBe("UNSUPPORTED_SPACE_TYPE");
-      expect(isAppError(err) && err.hint).toContain("docs/CAPTURE_GUIDE.md");
+      expect(isAppError(err) && err.hint).toContain("hot desks");
     }
   });
 
