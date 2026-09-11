@@ -787,25 +787,81 @@ export function buildBookingBody(
   };
 }
 
-/** Confirmation-email copy. Local wall-clock times; every value a string. */
+/**
+ * Confirmation-email copy, in the shape the members web app sends (verified from
+ * dvcrn/wework-cli). Every value is a string; times are location-local.
+ */
 export function buildMailData(
   q: QuotePayloadWithQuoteSpaceId,
   startUtc: string,
   endUtc: string,
 ): MailData {
+  const tz = q.timezone || "UTC";
+  const startWall = utcIsoToZonedWallClock(startUtc, tz, q.tzOffset);
+  const endWall = utcIsoToZonedWallClock(endUtc, tz, q.tzOffset);
   return {
-    LocationName: q.locationName ?? "",
-    LocationAddress: q.address ?? "",
-    City: q.city ?? "",
-    State: q.state ?? "",
-    Country: q.country ?? "",
-    TimeZone: q.timezone ?? "",
-    UTCOffset: q.tzOffset ?? "",
-    StartTime: utcIsoToZonedWallClock(startUtc, q.timezone, q.tzOffset),
-    EndTime: utcIsoToZonedWallClock(endUtc, q.timezone, q.tzOffset),
-    Credits: String(q.credits ?? 0),
-    SpaceType: String(BOOKING_SPACE_TYPE),
+    dayFormatted: formatDayLong(startUtc, tz),
+    startTimeFormatted: formatTime12h(startUtc, tz),
+    endTimeFormatted: formatTime12h(endUtc, tz),
+    floorAddress: "",
+    locationAddress: q.address ?? "",
+    creditsUsed: String(q.credits ?? 0),
+    Capacity: String(q.capacity ?? 1),
+    TimezoneUsed: gmtLabel(q.tzOffset),
+    TimezoneIana: tz,
+    startDateTime: wallClockToDateTime(startWall),
+    endDateTime: wallClockToDateTime(endWall),
+    locationName: q.locationName ?? "",
+    locationCity: q.city ?? "",
+    locationCountry: q.country ?? "",
+    locationState: q.state ?? "",
   };
+}
+
+/** `"Monday, September 21"` in the given zone (en-US, as the web app renders it). */
+export function formatDayLong(utcStamp: string, timeZone: string): string {
+  const ms = Date.parse(utcStamp);
+  if (Number.isNaN(ms)) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    }).format(ms);
+  } catch {
+    return "";
+  }
+}
+
+/** `"09:00 AM"` in the given zone. */
+export function formatTime12h(utcStamp: string, timeZone: string): string {
+  const ms = Date.parse(utcStamp);
+  if (Number.isNaN(ms)) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    })
+      .format(ms)
+      .replace(/\u202f/g, " ");
+  } catch {
+    return "";
+  }
+}
+
+/** `"+02:00"` -> `"GMT +02:00"`. */
+export function gmtLabel(offset: string | undefined): string {
+  const o = (offset ?? "").trim();
+  return o ? `GMT ${o}` : "GMT +00:00";
+}
+
+/** `"2026-09-21T09:00:00"` -> `"2026-09-21 09:00"`. */
+export function wallClockToDateTime(wallClock: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(wallClock);
+  return m ? `${m[1]} ${m[2]}` : wallClock;
 }
 
 /**
@@ -846,14 +902,21 @@ export function buildCancelBody(booking: Booking): CancelRequestBody {
     reservationId: first(booking.reservationId, str(raw.reservationId), "") ?? "",
     mailParams: {
       workspaceType: CANCEL_WORKSPACE_TYPE,
-      locationName: booking.locationName,
+      dayFormatted: formatDayLong(`${booking.startLocal}Z`, "UTC"),
+      startTimeFormatted: formatTime12h(`${booking.startLocal}Z`, "UTC"),
+      endTimeFormatted: formatTime12h(`${booking.endLocal}Z`, "UTC"),
+      floorAddress: "",
       locationAddress: booking.address ?? "",
-      startTime,
-      endTime,
-      timeZone: booking.timezone,
-      credits: String(credits),
+      locationCountry: rawAddressCountry(raw.location?.address),
     },
   };
+}
+
+/** The country from a raw location address, which upstream sends as a string or an object. */
+function rawAddressCountry(address: unknown): string {
+  if (typeof address !== "object" || address === null) return "";
+  const rec = address as { country?: unknown; countryCode?: unknown };
+  return first(str(rec.country), str(rec.countryCode), "") ?? "";
 }
 
 /**

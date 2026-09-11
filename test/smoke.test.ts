@@ -15,10 +15,58 @@ import { describe, expect, it } from "vitest";
 import { getSessionStub, SESSION_DO_NAME } from "../src/session/do";
 
 describe("worker front door", () => {
-  it("serves GET /healthz", async () => {
+  it("serves GET /healthz with presence booleans and no secret values", async () => {
     const response = await SELF.fetch("http://x/healthz");
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, version: "0.1.0" });
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      ok: true,
+      version: "0.1.0",
+      secrets: { adminPassword: true, quoteKey: true, cookieKey: true },
+      session: { state: "none" },
+      writeEnabled: true,
+    });
+    expect(JSON.stringify(body)).not.toContain(env.QUOTE_SIGNING_KEY);
+  });
+
+  it("serves the landing page and the public OpenAPI document", async () => {
+    const landing = await SELF.fetch("http://x/");
+    expect(landing.status).toBe(200);
+    expect(landing.headers.get("content-type")).toContain("text/html");
+
+    const openapi = await SELF.fetch("http://x/api/openapi.json");
+    expect(openapi.status).toBe(200);
+    const doc = (await openapi.json()) as { openapi: string; paths: Record<string, unknown> };
+    expect(doc.openapi).toMatch(/^3\.1/);
+    expect(Object.keys(doc.paths)).toContain("/api/bookings");
+  });
+
+  it("challenges unauthenticated /mcp and /api calls with OAuth discovery", async () => {
+    for (const path of ["/mcp", "/api/whoami"]) {
+      const response = await SELF.fetch(`http://x${path}`, {
+        method: path === "/mcp" ? "POST" : "GET",
+        headers: { "content-type": "application/json" },
+        body: path === "/mcp" ? "{}" : undefined,
+      });
+      expect(response.status).toBe(401);
+      expect(response.headers.get("www-authenticate")).toContain("resource_metadata");
+    }
+  });
+
+  it("publishes OAuth protected-resource metadata", async () => {
+    const response = await SELF.fetch("http://x/.well-known/oauth-protected-resource");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { authorization_servers?: string[] };
+    expect(body.authorization_servers?.length).toBeGreaterThan(0);
+  });
+
+  it("sends anonymous browsers on /admin to the login page", async () => {
+    const response = await SELF.fetch("http://x/admin", {
+      redirect: "manual",
+      headers: { accept: "text/html" },
+    });
+    expect([302, 303]).toContain(response.status);
+    expect(response.headers.get("location")).toContain("/admin/login");
   });
 
   it("returns a structured 404 for unknown routes", async () => {

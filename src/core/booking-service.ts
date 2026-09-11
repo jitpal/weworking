@@ -384,6 +384,9 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
         city: space.location.city,
         country: space.location.country,
         exp: expSeconds,
+        quoteSpaceId: space.inventoryUuid ?? space.spaceId,
+        spaceName: space.spaceName,
+        capacity: space.capacity,
       };
 
       const quote = await signQuote(payload, quoteKey);

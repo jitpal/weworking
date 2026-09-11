@@ -215,18 +215,28 @@ export interface RawMonthlyCreditsResponse extends RawEnvelope {
 
 /** The `MailData` block. Every value must be a string — `null` is rejected upstream. */
 export interface MailData {
-  LocationName: string;
-  LocationAddress: string;
-  City: string;
-  State: string;
-  Country: string;
-  TimeZone: string;
-  UTCOffset: string;
-  /** Local wall clock, for the confirmation email's body. */
-  StartTime: string;
-  EndTime: string;
-  Credits: string;
-  SpaceType: string;
+  /** e.g. `"Monday, September 21"` (en-US, location-local). */
+  dayFormatted: string;
+  /** e.g. `"09:00 AM"` (location-local). */
+  startTimeFormatted: string;
+  endTimeFormatted: string;
+  floorAddress: string;
+  locationAddress: string;
+  /** Credits as a string, e.g. `"10"`. */
+  creditsUsed: string;
+  /** Desk capacity as a string, usually `"1"`. */
+  Capacity: string;
+  /** e.g. `"GMT +02:00"`. */
+  TimezoneUsed: string;
+  /** IANA zone, e.g. `"Europe/Berlin"`. */
+  TimezoneIana: string;
+  /** `"YYYY-MM-DD HH:MM"` location-local. */
+  startDateTime: string;
+  endDateTime: string;
+  locationName: string;
+  locationCity: string;
+  locationCountry: string;
+  locationState: string;
 }
 
 /** Body of `POST /common-booking/quote`. */
@@ -338,13 +348,14 @@ export interface RawUpcomingBookingsResponse extends RawEnvelope {
 
 /** The `mailParams` block on a cancellation. `workspaceType` 1 is a shared desk. */
 export interface CancelMailParams {
+  /** Always `1` for a shared desk. */
   workspaceType: number;
-  locationName: string;
+  dayFormatted: string;
+  startTimeFormatted: string;
+  endTimeFormatted: string;
+  floorAddress: string;
   locationAddress: string;
-  startTime: string;
-  endTime: string;
-  timeZone: string;
-  credits: string;
+  locationCountry: string;
 }
 
 /** Body of `POST /common-booking/cancel`. */

@@ -12,6 +12,7 @@
  * `worker-configuration.d.ts` for the runtime (`DurableObject`, `KVNamespace`, ...).
  */
 
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { AppError } from "./errors";
 import type { WeWorkSession } from "./session/do";
 
@@ -53,6 +54,8 @@ export interface Env {
   SESSION: DurableObjectNamespace<WeWorkSession>;
   /** Required by `@cloudflare/workers-oauth-provider` for clients, grants and tokens. */
   OAUTH_KV: KVNamespace;
+  /** Injected by `OAuthProvider` at request time; absent in tests that bypass the provider. */
+  OAUTH_PROVIDER?: OAuthHelpers;
 
   /* ---- Secrets (wrangler secret put / .dev.vars) ---- */
 
@@ -169,7 +172,7 @@ export function parseConfig(env: Env): Config {
   const quoteSigningKey = requireHexKey(env.QUOTE_SIGNING_KEY, "QUOTE_SIGNING_KEY");
   const cookieSigningKey = requireHexKey(env.COOKIE_SIGNING_KEY, "COOKIE_SIGNING_KEY");
   const adminPassword = requireNonEmpty(env.ADMIN_PASSWORD, "ADMIN_PASSWORD");
-  const authTokens = parseAuthTokens(env.AUTH_TOKENS);
+  const authTokens = parseAuthTokensLenient(env.AUTH_TOKENS);
 
   const weworkUsername = emptyToUndefined(env.WEWORK_USERNAME);
   const weworkPassword = emptyToUndefined(env.WEWORK_PASSWORD);
@@ -314,6 +317,27 @@ function parseBaseUrl(value: string): string {
     throw validation("PUBLIC_BASE_URL must use https (http is allowed only for localhost).");
   }
   return url.origin;
+}
+
+let warnedMalformedAuthTokens = false;
+
+/**
+ * {@link parseAuthTokens}, but a malformed secret disables static tokens (with one
+ * redacted warning) instead of taking the whole deployment down. `/healthz` then
+ * reports `secrets.authTokens: 0`, which the docs explain.
+ */
+export function parseAuthTokensLenient(raw: string | undefined): StaticTokenConfig[] {
+  try {
+    return parseAuthTokens(raw);
+  } catch (err) {
+    if (!warnedMalformedAuthTokens) {
+      warnedMalformedAuthTokens = true;
+      console.warn("AUTH_TOKENS is malformed; static bearer tokens are disabled.", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return [];
+  }
 }
 
 /**

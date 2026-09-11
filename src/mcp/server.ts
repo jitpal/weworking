@@ -119,7 +119,7 @@ export interface MountMcpOptions {
  *   unauthorized: (req, env) => unauthorizedResponse(baseUrl(parseConfig(env), req)),
  * });
  */
-export function mountMcp(app: Hono<{ Bindings: Env }>, opts: MountMcpOptions): void {
+export function mountMcp<E extends { Bindings: Env }>(app: Hono<E>, opts: MountMcpOptions): void {
   const route = opts.route ?? MCP_ROUTE;
 
   app.all(route, async (c) => {

@@ -1,61 +1,80 @@
 /**
- * weworking — Worker entry point.
+ * weworking, Worker entry point.
  *
  * Unofficial WeWork hot-desk search and booking for AI agents. Not affiliated with
  * or endorsed by WeWork; it drives the same private member API the WeWork web app
  * uses, with your own credentials, from your own deployment.
  *
- * ## Composition order (the front door)
+ * Request flow:
  *
- * Requests land here in this order, and each mount point below is owned by a
- * different module:
- *
- *   1. `GET /healthz` — public, no secrets. Implemented inline below so it keeps
- *      working even when configuration is broken.
- *   2. OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/register`,
- *      `/.well-known/*`) — served by `@cloudflare/workers-oauth-provider`, which
- *      wraps this Hono app. See `src/auth/oauth.ts`.
- *   3. `/mcp` — the stateless MCP endpoint (`createMcpHandler` from
- *      `agents/mcp/server`). Protected. See `src/mcp/server.ts`.
- *   4. `/api/*` — the REST mirror plus `/api/openapi.json`. Protected.
- *      See `src/http/api.ts`.
- *   5. `/admin/*` — the connect page, status and audit log, behind the admin
- *      cookie or an `admin`-scoped token. See `src/http/admin.ts`.
- *
- * STATUS: scaffold. Only `/healthz` and the 404 handler are implemented. The
- * numbered `TODO(owner)` comments mark exactly where each module mounts; add the
- * import and the mount line and change nothing else in this file.
+ *   1. `OAuthProvider` (workers-oauth-provider) wraps the app. It serves the OAuth
+ *      token/registration/metadata endpoints itself, validates bearer tokens on
+ *      `/mcp` and `/api/*` (OAuth grants and, via `resolveExternalToken`, static
+ *      tokens from `AUTH_TOKENS`), and puts the grant's props on `ctx.props`.
+ *   2. Everything else lands in the Hono app: landing page, `/healthz`, the OAuth
+ *      approval form, `/admin/*`, `/api/openapi.json`.
+ *   3. `/mcp` and `/api/*` resolve an `Actor` from `ctx.props` or the raw header,
+ *      build a per-request booking service, and dispatch.
  */
 
 import { Hono } from "hono";
-import { type Env, parseConfig, VERSION } from "./env";
+import { adminRoutes } from "./auth/admin-session";
+import { actorMiddleware, baseUrlFrom, resolveActor, unauthorizedResponse } from "./auth/guard";
+import { createOAuthProvider, landingRoutes, oauthRoutes } from "./auth/oauth";
+import { createBookingService } from "./core/booking-service";
+import type { Actor } from "./core/types";
+import { baseUrl, type Env, parseConfig } from "./env";
 import { statusFor, toErrorBody } from "./errors";
+import { adminPages } from "./http/admin";
+import { apiRoutes } from "./http/api";
+import { healthRoutes } from "./http/health";
+import { openapiRoutes } from "./http/openapi";
+import { mountMcp } from "./mcp/server";
+import { runScheduled } from "./session/cron";
 import { getSessionStub } from "./session/do";
+import { DurableTokenStore } from "./session/token-store";
+import { WeWorkClient } from "./wework/client";
 
-const app = new Hono<{ Bindings: Env }>();
+type AppEnv = { Bindings: Env; Variables: { actor?: Actor } };
 
-/**
- * Public liveness and configuration probe. Reports *presence* booleans only —
- * never a secret, never a token, never the session itself beyond its state.
- *
- * The full shape (secrets, session, writeEnabled) lands with `src/http/health.ts`;
- * this inline version is the minimum that proves the worker is up.
- */
-app.get("/healthz", (c) => {
-  return c.json({ ok: true, version: VERSION });
+/** One booking service per request: config is re-read so secret changes apply immediately. */
+function buildService(env: Env, actor: Actor, req: Request) {
+  const config = parseConfig(env);
+  const session = getSessionStub(env, actor.accountId);
+  const api = new WeWorkClient({
+    fetch: globalThis.fetch.bind(globalThis),
+    tokens: new DurableTokenStore(session),
+  });
+  return createBookingService({
+    api,
+    session,
+    config,
+    quoteKey: config.quoteSigningKey,
+    baseUrl: baseUrl(config, req),
+    accountId: actor.accountId,
+  });
+}
+
+const app = new Hono<AppEnv>();
+
+/* Public */
+app.route("/", healthRoutes({ getSessionInfo: (env) => getSessionStub(env).getSessionInfo() }));
+app.route("/api", openapiRoutes());
+app.route("/", landingRoutes());
+
+/* OAuth approval form and admin pages (admin cookie or admin-scoped token) */
+app.route("/", oauthRoutes());
+app.route("/", adminRoutes());
+app.route("/", adminPages());
+
+/* Protected agent surfaces */
+mountMcp(app, {
+  resolveActor,
+  buildService,
+  unauthorized: (req, env) => unauthorizedResponse(baseUrlFrom(req, env)),
 });
-
-// TODO(oauth engineer): mount the OAuth authorize/approve + admin login handlers,
-// then wrap this app with `new OAuthProvider({ apiRoute: ["/mcp", "/api/"], ... })`
-// in the default export below. See docs/DESIGN.md §8.
-
-// TODO(mcp engineer): app.all("/mcp", ...) -> createMcpHandler(factory) from
-// "agents/mcp/server", with the Actor resolved by src/auth/guard.ts and passed
-// through the handler's `authContext.props`. See docs/DEPENDENCY_NOTES.md.
-
-// TODO(http engineer): app.route("/api", apiRoutes) and GET /api/openapi.json (public).
-
-// TODO(http engineer): app.route("/admin", adminRoutes).
+app.use("/api/*", actorMiddleware());
+app.route("/api", apiRoutes({ buildService }));
 
 /** Uniform error envelope: `{ error: { code, message, hint } }` for every failure. */
 app.onError((err, c) => {
@@ -75,30 +94,32 @@ app.notFound((c) => {
   );
 });
 
-/**
- * Daily maintenance (cron `17 5 * * *`): refresh the WeWork token while it is still
- * valid, and prune expired idempotency rows and old audit entries.
- *
- * STATUS: scaffold. `src/session/cron.ts` will own the body; this wiring stays.
- */
+const handler = { fetch: app.fetch } satisfies ExportedHandler<Env>;
+const provider = createOAuthProvider({ apiHandler: handler, defaultHandler: handler });
+
+/** Routes the provider protects but that must stay public. */
+const PUBLIC_UNDER_API = new Set(["/api/openapi.json", "/api/docs"]);
+
+/** Daily maintenance (cron `17 5 * * *`). Never throws: a throwing cron is retried. */
 async function scheduled(
   _controller: ScheduledController,
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  // Fail loudly in logs but never throw: a throwing cron handler is retried and
-  // would hammer Auth0.
   try {
-    parseConfig(env);
-    // TODO(session engineer): await getSessionStub(env).maintain();
-    void getSessionStub;
+    await runScheduled(env);
   } catch (err) {
     console.error("scheduled: maintenance failed", toErrorBody(err));
   }
 }
 
 export default {
-  fetch: app.fetch,
+  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    if (PUBLIC_UNDER_API.has(new URL(request.url).pathname)) {
+      return app.fetch(request, env, ctx);
+    }
+    return provider.fetch(request, env as unknown as Cloudflare.Env, ctx);
+  },
   scheduled,
 } satisfies ExportedHandler<Env>;
 

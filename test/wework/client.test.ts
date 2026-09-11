@@ -498,18 +498,22 @@ describe("quote", () => {
       StartTime: "2026-09-21T07:00:00Z",
       EndTime: "2026-09-21T15:00:00Z",
       MailData: {
-        LocationName: "Fake Tower",
-        LocationAddress: "100 Example Street, Floor 4",
-        City: "Berlin",
-        State: "Berlin",
-        Country: "DE",
-        TimeZone: "Europe/Berlin",
-        UTCOffset: "+02:00",
+        dayFormatted: "Monday, September 21",
+        startTimeFormatted: "09:00 AM",
+        endTimeFormatted: "05:00 PM",
+        floorAddress: "",
+        locationAddress: "100 Example Street, Floor 4",
+        creditsUsed: "10",
+        Capacity: "1",
+        TimezoneUsed: "GMT +02:00",
+        TimezoneIana: "Europe/Berlin",
         // Local wall clock, not UTC: the email says 09:00-17:00.
-        StartTime: "2026-09-21T09:00:00",
-        EndTime: "2026-09-21T17:00:00",
-        Credits: "10",
-        SpaceType: "4",
+        startDateTime: "2026-09-21 09:00",
+        endDateTime: "2026-09-21 17:00",
+        locationName: "Fake Tower",
+        locationCity: "Berlin",
+        locationCountry: "DE",
+        locationState: "Berlin",
       },
     });
   });
@@ -521,7 +525,7 @@ describe("quote", () => {
     delete sparse.state;
     await client.quote(sparse);
     expect(fetchStub.calls[0]?.body).not.toContain("null");
-    expect(jsonBody(fetchStub.calls[0]?.body).MailData).toMatchObject({ State: "" });
+    expect(jsonBody(fetchStub.calls[0]?.body).MailData).toMatchObject({ locationState: "" });
   });
 
   it("uses quoteSpaceId for the quote's SpaceID when the payload carries one", async () => {
@@ -745,12 +749,12 @@ describe("cancelBooking", () => {
       reservationId: "RSV-FAKE-0001",
       mailParams: {
         workspaceType: 1,
-        locationName: "Fake Tower",
+        dayFormatted: "Tuesday, September 22",
+        startTimeFormatted: "09:00 AM",
+        endTimeFormatted: "05:00 PM",
+        floorAddress: "",
         locationAddress: "100 Example Street, Floor 4",
-        startTime: "2026-09-22T09:00:00.000",
-        endTime: "2026-09-22T17:00:00.000",
-        timeZone: "Europe/Berlin",
-        credits: "10",
+        locationCountry: "Germany",
       },
     });
   });

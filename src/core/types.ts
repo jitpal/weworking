@@ -135,6 +135,12 @@ export interface QuotePayload {
   state?: string;
   /** Expiry as a Unix timestamp in seconds. */
   exp: number;
+  /** `SpaceID` for the upstream *quote* call (`inventoryUuid || uuid`); the booking call uses `bookingSpaceId`. */
+  quoteSpaceId?: string;
+  /** Human-readable space name, used in the confirmation-email block. */
+  spaceName?: string;
+  /** Desk capacity, used in the confirmation-email block. */
+  capacity?: number;
 }
 
 /** A booking, either just created or read back from the upstream bookings list. */

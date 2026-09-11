@@ -18,7 +18,7 @@
   "name": "weworking",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-04",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
   /** One SQLite Durable Object holds the WeWork session, caps, idempotency and audit log. */
   "durable_objects": {
