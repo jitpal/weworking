@@ -1,0 +1,36 @@
+# weworking — local secrets for `wrangler dev`.
+#
+# Copy to `.dev.vars` (git-ignored) and fill in. For a deployed Worker set the
+# same names with `npx wrangler secret put <NAME>` instead — never commit real values.
+#
+# Non-secret configuration (WRITE_ENABLED, MAX_BOOKINGS_PER_DAY, ...) lives in
+# `wrangler.jsonc` under `vars`, not here.
+
+# --- WeWork member credentials (OPTIONAL) -----------------------------------
+# Only needed if you want the Worker to log in by itself (LOGIN_STRATEGY=auto|headless).
+# Auth0 frequently blocks datacenter IPs with `requires_verification`, and MFA is not
+# supported, so the reliable path is: leave these empty, log in once in your own browser
+# and paste the token at /admin/connect. See docs/SELF_HOSTING.md.
+WEWORK_USERNAME=""
+WEWORK_PASSWORD=""
+
+# --- Admin access (REQUIRED) ------------------------------------------------
+# Gates /admin/* (the connect page, audit log, status) and the OAuth approve screen.
+# Use a long random passphrase.
+ADMIN_PASSWORD=""
+
+# --- Static scoped bearer tokens (OPTIONAL) ---------------------------------
+# JSON array of tokens that may call /mcp and /api/*, stored as SHA-256 hashes.
+# Generate an entry with: node scripts/hash-token.mjs claude-code read write
+# Example:
+# AUTH_TOKENS='[{"name":"claude-code","sha256":"<64 hex chars>","scopes":["read","write"]}]'
+AUTH_TOKENS="[]"
+
+# --- Signing keys (REQUIRED) ------------------------------------------------
+# 32+ random bytes, hex. Generate with:
+#   node -e "console.log(crypto.getRandomValues(new Uint8Array(32)).reduce((s,b)=>s+b.toString(16).padStart(2,'0'),''))"
+#
+# Signs booking quotes (HMAC-SHA-256). create_booking only accepts a quote this key signed.
+QUOTE_SIGNING_KEY=""
+# Signs the /admin session cookie.
+COOKIE_SIGNING_KEY=""

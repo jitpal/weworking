@@ -1,0 +1,76 @@
+/**
+ * weworking — Cloudflare Worker configuration.
+ *
+ * Docs: https://developers.cloudflare.com/workers/wrangler/configuration/
+ *
+ * Before your first deploy:
+ *   1. `npx wrangler kv namespace create OAUTH_KV` and paste the returned id
+ *      into `kv_namespaces[0].id` below.
+ *   2. Set the secrets listed in `.dev.vars.example` with `npx wrangler secret put <NAME>`.
+ *   3. Tune the `vars` block — it is the safety configuration (caps, kill switch).
+ *
+ * Deliberately NOT set here (self-hosters add their own):
+ *   - `account_id` (wrangler picks it up from your login / CLOUDFLARE_ACCOUNT_ID)
+ *   - `routes` / `custom_domain` (the generated workers.dev URL is enough to start)
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "weworking",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-04",
+  "compatibility_flags": ["nodejs_compat"],
+
+  /** One SQLite Durable Object holds the WeWork session, caps, idempotency and audit log. */
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION",
+        "class_name": "WeWorkSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WeWorkSession"]
+    }
+  ],
+
+  /** Required by @cloudflare/workers-oauth-provider to store clients, grants and tokens. */
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "REPLACE_ME_CREATE_WITH_wrangler_kv_namespace_create"
+    }
+  ],
+
+  /** Daily maintenance: refresh the WeWork token before it expires, prune old rows. */
+  "triggers": {
+    "crons": ["17 5 * * *"]
+  },
+
+  /**
+   * Plain (non-secret) configuration. Override per deployment.
+   * Everything is a string: `src/env.ts#parseConfig` parses and validates.
+   */
+  "vars": {
+    /** Master kill switch for every mutating operation (booking, cancelling). */
+    "WRITE_ENABLED": "true",
+    /** Max successful bookings per local calendar day. */
+    "MAX_BOOKINGS_PER_DAY": "1",
+    /** Max successful bookings per ISO week. */
+    "MAX_BOOKINGS_PER_WEEK": "5",
+    /** Max WeWork credits a single booking may spend. "0" = unlimited. */
+    "MAX_CREDITS_PER_BOOKING": "0",
+    /** Lifetime of an HMAC-signed booking quote. */
+    "QUOTE_TTL_SECONDS": "600",
+    /** auto | headless | manual — how the worker obtains a WeWork token. */
+    "LOGIN_STRATEGY": "auto",
+    /** Optional absolute base URL (e.g. "https://desk.example.com") for OAuth issuer + hints. */
+    "PUBLIC_BASE_URL": ""
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    /* Language and emit — the Worker is bundled by wrangler/esbuild, tsc only typechecks. */
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    /* Interop */
+    "allowJs": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Cloudflare runtime types come from the generated worker-configuration.d.ts. */
+    "types": ["./worker-configuration.d.ts", "@cloudflare/vitest-pool-workers"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "*.ts", "worker-configuration.d.ts"],
+  "exclude": ["node_modules", ".wrangler", "dist"]
+}
