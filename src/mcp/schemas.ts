@@ -285,7 +285,10 @@ export const whoamiOutput = z.looseObject({
   caps: z.looseObject({
     maxBookingsPerDay: z.number(),
     maxBookingsPerWeek: z.number(),
-    maxCreditsPerBooking: z.number().describe("0 means unlimited."),
+    maxCreditsPerBooking: z.number().describe("0 allows only free desks; -1 means no limit."),
+    maxCashPerBooking: z
+      .number()
+      .describe("0 allows no cash bookings; -1 means no limit. In the building's currency."),
   }),
   capsRemaining: capsRemainingOut,
   writeEnabled: z.boolean(),

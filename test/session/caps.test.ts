@@ -4,8 +4,8 @@
  * The caps are the safety net that makes this deployment harmless to an agent that
  * loops: every booking passes through `reserveBooking()` first, and only confirmed or
  * freshly-reserved non-dry-run rows count. The pool's bindings give the defaults
- * `MAX_BOOKINGS_PER_DAY=1`, `MAX_BOOKINGS_PER_WEEK=5`, `MAX_CREDITS_PER_BOOKING=0`
- * (unlimited); tests that need other limits patch the config seam.
+ * `MAX_BOOKINGS_PER_DAY=1`, `MAX_BOOKINGS_PER_WEEK=5`, and both money caps
+ * `"unlimited"`; tests that need other limits patch the config seam.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -152,7 +152,7 @@ describe("reserveBooking — week cap", () => {
 });
 
 describe("reserveBooking — credits cap", () => {
-  it("treats MAX_CREDITS_PER_BOOKING=0 as unlimited", async () => {
+  it('treats MAX_CREDITS_PER_BOOKING="unlimited" as no limit', async () => {
     const stub = freshSession("caps-credits-unlimited");
     await expect(
       stub.reserveBooking({
@@ -183,6 +183,74 @@ describe("reserveBooking — credits cap", () => {
     if (refused.ok) throw new Error("unreachable");
     expect(refused.code).toBe("CAP_EXCEEDED");
     expect(refused.message).toContain("MAX_CREDITS_PER_BOOKING is 10");
+  });
+});
+
+describe("reserveBooking — cash cap", () => {
+  it("ignores the cash cap when it is unlimited", async () => {
+    const stub = freshSession("caps-cash-unlimited");
+    await expect(
+      stub.reserveBooking({
+        bookingKey: "k1",
+        date: MON,
+        credits: 0,
+        amount: 9_999,
+        actor: "a",
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refuses a cash booking over the per-booking money limit", async () => {
+    const stub = freshSession("caps-cash-limit");
+    await patchConfig(stub, { maxCashPerBooking: 84.5 });
+
+    await expect(
+      stub.reserveBooking({
+        bookingKey: "k1",
+        date: MON,
+        credits: 0,
+        amount: 84.5,
+        actor: "a",
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ ok: true });
+
+    const refused = await stub.reserveBooking({
+      bookingKey: "k2",
+      date: TUE,
+      credits: 0,
+      amount: 90,
+      actor: "a",
+      dryRun: false,
+    });
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.code).toBe("CAP_EXCEEDED");
+    expect(refused.message).toContain("MAX_CASH_PER_BOOKING is 84.5");
+  });
+
+  it("refuses every priced booking at a cap of zero, and writes no row", async () => {
+    const stub = freshSession("caps-cash-zero");
+    await patchConfig(stub, { maxCashPerBooking: 0 });
+    await expect(
+      stub.reserveBooking({
+        bookingKey: "k1",
+        date: MON,
+        credits: 0,
+        amount: 0.01,
+        actor: "a",
+        dryRun: false,
+      }),
+    ).resolves.toMatchObject({ ok: false, code: "CAP_EXCEEDED" });
+    await expect(queryCount(stub, "SELECT COUNT(*) AS n FROM bookings_ledger")).resolves.toBe(0);
+  });
+
+  it("treats a missing amount as free, so a credit booking is unaffected", async () => {
+    const stub = freshSession("caps-cash-absent");
+    await patchConfig(stub, { maxCashPerBooking: 0 });
+    await expect(
+      stub.reserveBooking({ bookingKey: "k1", date: MON, credits: 2, actor: "a", dryRun: false }),
+    ).resolves.toMatchObject({ ok: true });
   });
 });
 

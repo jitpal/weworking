@@ -151,6 +151,10 @@ describe("GET /admin", () => {
     expect(html).toContain("valid");
     expect(html).toContain("2026-09-11T20:00:00.000Z");
     expect(html).toContain("Bookings per day");
+    // Both money caps are shown, and at the default both say "nothing may be spent".
+    expect(html).toContain("Cash per booking");
+    expect(html).toContain("no cash bookings");
+    expect(html).toContain("free desks only");
     expect(html).toContain("/mcp</pre>");
     expect(html).toContain('href="/admin/keys"');
     expect(html).toContain('href="/admin/connect"');
@@ -158,6 +162,17 @@ describe("GET /admin", () => {
     expect(html).toContain("https://desk.example.com/mcp");
     expect(html).toContain("Content-Security-Policy");
     expect(stub.getSessionInfo).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["unlimited", { MAX_CASH_PER_BOOKING: "unlimited" }, "no limit"],
+    ["an amount", { MAX_CASH_PER_BOOKING: "84.5" }, "84.5 per booking"],
+  ])("renders the cash cap set to %s", async (_label, vars, expected) => {
+    const app = pages(fakeStub());
+    const html = await (
+      await app.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, await adminEnv(vars))
+    ).text();
+    expect(html).toContain(expected);
   });
 
   it("shows a prompt to connect when nothing is stored", async () => {
@@ -475,6 +490,7 @@ describe("GET /admin/status", () => {
       maxBookingsPerDay: 1,
       maxBookingsPerWeek: 5,
       maxCreditsPerBooking: 0,
+      maxCashPerBooking: 0,
     });
     expect(body.writeEnabled).toBe(true);
     expect(body.secrets).toEqual({

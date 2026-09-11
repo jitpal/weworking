@@ -273,8 +273,12 @@ export class WeWorkSession extends DurableObject<Env> {
   /**
    * Reserves a cap slot for a booking that is about to be attempted upstream.
    *
-   * Checks `MAX_CREDITS_PER_BOOKING` (0 = unlimited), then `MAX_BOOKINGS_PER_DAY`
-   * for `date` and `MAX_BOOKINGS_PER_WEEK` for its ISO week (Monday-Sunday).
+   * Checks `MAX_CREDITS_PER_BOOKING` and `MAX_CASH_PER_BOOKING` (`-1` = unlimited for
+   * both), then `MAX_BOOKINGS_PER_DAY` for `date` and `MAX_BOOKINGS_PER_WEEK` for its
+   * ISO week (Monday-Sunday). This object is the authority on all four: the booking
+   * service checks the same limits first, so an agent gets a useful error, but a
+   * booking is only ever reserved here.
+   *
    * Dry-run rows are written with `dry_run = 1` and never count towards a cap, but
    * the caps are still evaluated so a dry run reports what a real booking would do.
    *
@@ -286,12 +290,15 @@ export class WeWorkSession extends DurableObject<Env> {
     bookingKey: string;
     date: string;
     credits: number;
+    /** Cash price of the booking, in the building's currency. Absent means zero. */
+    amount?: number;
     actor: string;
     dryRun: boolean;
   }): Promise<ReserveBookingResult> {
     const date = normaliseDate(args.date);
     const bookingKey = requireText(args.bookingKey, "bookingKey");
     const credits = Number.isFinite(args.credits) ? Math.max(0, Math.trunc(args.credits)) : 0;
+    const amount = Number.isFinite(args.amount) ? Math.max(0, args.amount as number) : 0;
     const caps = this.loadConfig();
     const now = this.now();
     const counts = this.#counts(date, now, bookingKey);
@@ -301,6 +308,14 @@ export class WeWorkSession extends DurableObject<Env> {
         ok: false,
         code: "CAP_EXCEEDED",
         message: `This booking costs ${credits} credits but MAX_CREDITS_PER_BOOKING is ${caps.maxCreditsPerBooking}.`,
+        capsRemaining: remaining(caps, counts),
+      };
+    }
+    if (caps.maxCashPerBooking >= 0 && amount > caps.maxCashPerBooking) {
+      return {
+        ok: false,
+        code: "CAP_EXCEEDED",
+        message: `This booking costs ${amount} in cash but MAX_CASH_PER_BOOKING is ${caps.maxCashPerBooking}.`,
         capsRemaining: remaining(caps, counts),
       };
     }

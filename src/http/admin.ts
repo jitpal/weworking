@@ -309,6 +309,7 @@ export interface AdminCaps {
   maxBookingsPerDay: number | null;
   maxBookingsPerWeek: number | null;
   maxCreditsPerBooking: number | null;
+  maxCashPerBooking: number | null;
 }
 
 interface AdminStatus {
@@ -361,6 +362,7 @@ async function collectStatus(
       maxBookingsPerDay: config?.maxBookingsPerDay ?? null,
       maxBookingsPerWeek: config?.maxBookingsPerWeek ?? null,
       maxCreditsPerBooking: config?.maxCreditsPerBooking ?? null,
+      maxCashPerBooking: config?.maxCashPerBooking ?? null,
     },
     writeEnabled: config?.writeEnabled ?? false,
     loginStrategy: config?.loginStrategy ?? env.LOGIN_STRATEGY ?? "auto",
@@ -581,8 +583,19 @@ function dashboardPage(options: {
       : status.caps.maxCreditsPerBooking < 0
         ? "no limit"
         : status.caps.maxCreditsPerBooking === 0
-          ? "free desks only (All Access desks and cash bookings cost no credits)"
+          ? "free desks only (an All Access desk costs no credits; a cash price is capped below)"
           : `${status.caps.maxCreditsPerBooking} credits`;
+
+  // Credits and cash are separate currencies: an All Access desk spends credits, a
+  // pay-as-you-go desk spends money, and each has its own ceiling.
+  const cashCap =
+    status.caps.maxCashPerBooking === null
+      ? "unknown"
+      : status.caps.maxCashPerBooking < 0
+        ? "no limit"
+        : status.caps.maxCashPerBooking === 0
+          ? "no cash bookings"
+          : `${status.caps.maxCashPerBooking} per booking, in the building's currency`;
 
   return page({
     title: "Status",
@@ -653,6 +666,7 @@ ${keyValues([
   ["Bookings per day", status.caps.maxBookingsPerDay ?? "unknown"],
   ["Bookings per week", status.caps.maxBookingsPerWeek ?? "unknown"],
   ["Credits per booking", creditsCap],
+  ["Cash per booking", cashCap],
   ["Booking allowed", status.writeEnabled ? "yes" : "no"],
 ])}
 

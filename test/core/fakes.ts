@@ -67,6 +67,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     maxBookingsPerDay: 1,
     maxBookingsPerWeek: 5,
     maxCreditsPerBooking: -1,
+    maxCashPerBooking: -1,
     quoteSigningKey: TEST_QUOTE_KEY,
     cookieSigningKey: TEST_QUOTE_KEY,
     adminPassword: "admin",
@@ -267,6 +268,14 @@ export interface FakeSession {
   session: SessionRpc;
   audits: Array<{ tool: string; outcome: string; error?: string; dryRun?: boolean }>;
   idempotency: Map<string, unknown>;
+  /** Every `reserveBooking` argument object, in call order. */
+  reservations: Array<{
+    bookingKey: string;
+    date: string;
+    credits: number;
+    amount?: number;
+    dryRun: boolean;
+  }>;
   reserved: Set<string>;
   released: string[];
   confirmed: Array<{ bookingKey: string; bookingId: string }>;
@@ -282,6 +291,7 @@ export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
   let usedThisWeek = script.usedThisWeek ?? 0;
 
   const audits: FakeSession["audits"] = [];
+  const reservations: FakeSession["reservations"] = [];
   const idempotency = new Map<string, unknown>();
   const reserved = new Set<string>();
   const released: string[] = [];
@@ -306,7 +316,9 @@ export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
         }
       );
     },
-    async reserveBooking({ bookingKey, dryRun }): Promise<ReserveResult> {
+    async reserveBooking(args): Promise<ReserveResult> {
+      const { bookingKey, dryRun } = args;
+      reservations.push(args);
       if (caps().day <= 0 || caps().week <= 0) {
         return {
           ok: false,
@@ -363,6 +375,7 @@ export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
   return {
     session,
     audits,
+    reservations,
     idempotency,
     reserved,
     released,

@@ -62,8 +62,16 @@
     "MAX_BOOKINGS_PER_DAY": "1",
     /** Max successful bookings per ISO week. */
     "MAX_BOOKINGS_PER_WEEK": "7",
-    /** Most credits one booking may spend. "0" = only free (All Access / cash) desks. "unlimited" = no cap. */
+    /** Most credits one booking may spend. "0" = only desks included in the plan. "unlimited" = no cap. */
     "MAX_CREDITS_PER_BOOKING": "0",
+    /**
+     * Most money one booking may spend, in the building's own currency. "0" (the
+     * default) refuses every pay-as-you-go desk; decimals are allowed;
+     * "unlimited" = no cap. All Access desks are free and pay-as-you-go desks cost
+     * money, so both caps start at zero: raise this one to whatever you are willing
+     * to let an agent spend.
+     */
+    "MAX_CASH_PER_BOOKING": "0",
     /** auto | headless | manual — how the worker obtains a WeWork token. */
     "LOGIN_STRATEGY": "auto",
     /** Optional absolute base URL (e.g. "https://desk.example.com") for OAuth issuer + hints. */

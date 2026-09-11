@@ -27,6 +27,7 @@ export default defineConfig({
           MAX_BOOKINGS_PER_DAY: "1",
           MAX_BOOKINGS_PER_WEEK: "5",
           MAX_CREDITS_PER_BOOKING: "unlimited",
+          MAX_CASH_PER_BOOKING: "unlimited",
           LOGIN_STRATEGY: "manual",
           PUBLIC_BASE_URL: "https://weworking.test",
           ADMIN_PASSWORD: "test-admin-password",

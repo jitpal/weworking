@@ -557,6 +557,78 @@ describe("createBooking", () => {
     expect(harness.session.reserved.size).toBe(0);
   });
 
+  it("enforces MAX_CASH_PER_BOOKING on a pay-as-you-go quote", async () => {
+    // A cash booking costs no credits, so the credit cap never sees it.
+    const harness = createHarness({
+      config: { maxCashPerBooking: 50, maxCreditsPerBooking: 0 },
+      apiScript: {
+        spaces: [makeSpace({ credits: 0, location: makeLocation({ currency: "GBP" }) })],
+        price: { credits: 0, creditRatio: 20, amount: 84, currency: "GBP" },
+      },
+    });
+    const quote = await firstQuote(harness);
+    try {
+      await harness.service.createBooking({ quote }, READ_WRITE_ACTOR);
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(isAppError(err) && err.code).toBe("CAP_EXCEEDED");
+      expect(isAppError(err) && err.message).toContain("MAX_CASH_PER_BOOKING");
+      expect(isAppError(err) && err.message).toContain("£84.00");
+      expect(isAppError(err) && err.details).toEqual({ maxCashPerBooking: 50, amount: 84 });
+    }
+    expect(harness.session.reserved.size).toBe(0);
+    expect(harness.api.calls.filter((c) => c.method === "book")).toHaveLength(0);
+    expect(harness.session.audits).toContainEqual({
+      tool: "create_booking",
+      outcome: "denied",
+      error: "CAP_EXCEEDED",
+      dryRun: false,
+    });
+  });
+
+  it("refuses every cash booking at the default cap of zero", async () => {
+    const harness = createHarness({
+      config: { maxCashPerBooking: 0 },
+      apiScript: {
+        spaces: [makeSpace({ credits: 0, location: makeLocation({ currency: "GBP" }) })],
+        price: { credits: 0, creditRatio: 20, amount: 1, currency: "GBP" },
+      },
+    });
+    const quote = await firstQuote(harness);
+    expect(await codeOf(harness.service.createBooking({ quote }, READ_WRITE_ACTOR))).toBe(
+      "CAP_EXCEEDED",
+    );
+  });
+
+  it("books a cash desk that fits under the cap, and tells the Durable Object the price", async () => {
+    const harness = createHarness({
+      config: { maxCashPerBooking: 100 },
+      apiScript: {
+        spaces: [makeSpace({ credits: 0, location: makeLocation({ currency: "GBP" }) })],
+        price: { credits: 0, creditRatio: 20, amount: 84, currency: "GBP" },
+      },
+    });
+    const quote = await firstQuote(harness);
+    await expect(harness.service.createBooking({ quote }, READ_WRITE_ACTOR)).resolves.toMatchObject(
+      { dryRun: false },
+    );
+    expect(harness.session.reservations[0]).toMatchObject({ amount: 84, credits: 0 });
+  });
+
+  it("lets MAX_CASH_PER_BOOKING=-1 through unbounded", async () => {
+    const harness = createHarness({
+      config: { maxCashPerBooking: -1 },
+      apiScript: {
+        spaces: [makeSpace({ credits: 0, location: makeLocation({ currency: "GBP" }) })],
+        price: { credits: 0, creditRatio: 20, amount: 9_999, currency: "GBP" },
+      },
+    });
+    const quote = await firstQuote(harness);
+    await expect(harness.service.createBooking({ quote }, READ_WRITE_ACTOR)).resolves.toMatchObject(
+      { dryRun: false },
+    );
+  });
+
   it("replays an idempotent retry instead of booking twice", async () => {
     const harness = createHarness({ sessionScript: { maxPerDay: 5 } });
     const quote = await firstQuote(harness);
@@ -735,7 +807,12 @@ describe("whoami", () => {
       credits: { remaining: 7.5 },
       session: { state: "valid" },
       actor: READ_WRITE_ACTOR,
-      caps: { maxBookingsPerDay: 1, maxBookingsPerWeek: 5, maxCreditsPerBooking: -1 },
+      caps: {
+        maxBookingsPerDay: 1,
+        maxBookingsPerWeek: 5,
+        maxCreditsPerBooking: -1,
+        maxCashPerBooking: -1,
+      },
       capsRemaining: { day: 1, week: 5 },
       writeEnabled: true,
     });

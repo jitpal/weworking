@@ -3,8 +3,10 @@
 # Copy to `.dev.vars` (git-ignored) and fill in. For a deployed Worker set the
 # same names with `npx wrangler secret put <NAME>` instead — never commit real values.
 #
-# Non-secret configuration (WRITE_ENABLED, MAX_BOOKINGS_PER_DAY, ...) lives in
-# `wrangler.jsonc` under `vars`, not here.
+# Non-secret configuration (WRITE_ENABLED, MAX_BOOKINGS_PER_DAY,
+# MAX_CREDITS_PER_BOOKING, MAX_CASH_PER_BOOKING, ...) lives in `wrangler.jsonc`
+# under `vars`, not here. Both money caps default to "0": raise MAX_CASH_PER_BOOKING
+# if your plan pays for desks in cash rather than in credits.
 
 # --- WeWork member credentials (OPTIONAL) -----------------------------------
 # Only needed if you want the Worker to log in by itself (LOGIN_STRATEGY=auto|headless).

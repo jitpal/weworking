@@ -75,6 +75,7 @@ export interface Env {
   MAX_BOOKINGS_PER_DAY?: string;
   MAX_BOOKINGS_PER_WEEK?: string;
   MAX_CREDITS_PER_BOOKING?: string;
+  MAX_CASH_PER_BOOKING?: string;
   LOGIN_STRATEGY?: string;
   PUBLIC_BASE_URL?: string;
 }
@@ -98,6 +99,16 @@ export interface Config {
    * booking. `-1` means no limit.
    */
   maxCreditsPerBooking: number;
+  /**
+   * Most money one booking may spend, in the building's own currency. `0` (the
+   * default) refuses every booking that costs cash, which is what a pay-as-you-go
+   * desk does. `-1` means no limit. Decimals are allowed.
+   *
+   * This is the companion to {@link Config.maxCreditsPerBooking}: an All Access desk
+   * costs credits and a pay-as-you-go desk costs money, so one cap without the other
+   * leaves a whole class of booking unbounded.
+   */
+  maxCashPerBooking: number;
 
   /** Raw hex HMAC key for quote signing. */
   quoteSigningKey: string;
@@ -133,11 +144,15 @@ export const VERSION = "0.1.0";
 /** Minimum key length in bytes for the HMAC secrets. */
 const MIN_KEY_BYTES = 32;
 
+/** Upper bound on `MAX_CASH_PER_BOOKING`; past this the cap is not a safety net. */
+const MAX_CASH_CAP = 1_000_000;
+
 const DEFAULTS = {
   WRITE_ENABLED: "true",
   MAX_BOOKINGS_PER_DAY: "1",
   MAX_BOOKINGS_PER_WEEK: "7",
   MAX_CREDITS_PER_BOOKING: "0",
+  MAX_CASH_PER_BOOKING: "0",
   LOGIN_STRATEGY: "auto",
   PUBLIC_BASE_URL: "",
 } as const;
@@ -184,6 +199,7 @@ export function parseConfig(env: Env): Config {
     maxCreditsPerBooking: parseCreditsCap(
       env.MAX_CREDITS_PER_BOOKING ?? DEFAULTS.MAX_CREDITS_PER_BOOKING,
     ),
+    maxCashPerBooking: parseCashCap(env.MAX_CASH_PER_BOOKING ?? DEFAULTS.MAX_CASH_PER_BOOKING),
     quoteSigningKey,
     cookieSigningKey,
     adminPassword,
@@ -272,9 +288,34 @@ function parseInteger(value: string, name: string, bounds: { min: number; max: n
 
 /** `"unlimited"` (or `-1`) disables the cap; otherwise a non-negative integer. */
 function parseCreditsCap(value: string): number {
-  const normalised = value.trim().toLowerCase();
-  if (normalised === "unlimited" || normalised === "none" || normalised === "-1") return -1;
+  if (isUncapped(value)) return -1;
   return parseInteger(value, "MAX_CREDITS_PER_BOOKING", { min: 0, max: 100_000 });
+}
+
+/**
+ * `"unlimited"` (or `-1`) disables the cap; otherwise a non-negative amount of money
+ * in the building's own currency. Decimals are allowed, because a day rate is rarely
+ * a round number and the cap is compared against the quoted total.
+ */
+function parseCashCap(value: string): number {
+  if (isUncapped(value)) return -1;
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw validation(
+      'MAX_CASH_PER_BOOKING must be a non-negative number (decimals allowed), or "unlimited".',
+    );
+  }
+  const parsed = Number.parseFloat(trimmed);
+  if (!Number.isFinite(parsed) || parsed > MAX_CASH_CAP) {
+    throw validation(`MAX_CASH_PER_BOOKING must be between 0 and ${MAX_CASH_CAP}.`);
+  }
+  return parsed;
+}
+
+/** The three spellings that mean "do not cap this at all". */
+function isUncapped(value: string): boolean {
+  const normalised = value.trim().toLowerCase();
+  return normalised === "unlimited" || normalised === "none" || normalised === "-1";
 }
 
 function parseLoginStrategy(value: string): LoginStrategyName {

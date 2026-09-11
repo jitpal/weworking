@@ -82,7 +82,8 @@ Plain values in `wrangler.jsonc` under `vars`. Edit and redeploy to change them.
 | `WRITE_ENABLED` | `"true"` | `"false"` rejects every write with `WRITE_DISABLED` |
 | `MAX_BOOKINGS_PER_DAY` | `"1"` | enforced in the Durable Object ledger |
 | `MAX_BOOKINGS_PER_WEEK` | `"7"` | same |
-| `MAX_CREDITS_PER_BOOKING` | `"0"` | `0` allows only bookings that cost no credits (All Access desks, cash bookings); a number caps credits per booking; `"unlimited"` removes the cap |
+| `MAX_CREDITS_PER_BOOKING` | `"0"` | `0` allows only bookings that cost no credits, which is every desk included in an All Access plan; a number caps credits per booking; `"unlimited"` removes the cap |
+| `MAX_CASH_PER_BOOKING` | `"0"` | `0` refuses every booking with a cash price, which is what a pay-as-you-go desk has; a number (decimals allowed) caps the quoted total in the building's own currency; `"unlimited"` removes the cap |
 | `LOGIN_STRATEGY` | `"auto"` | `auto` tries refresh then headless login; `headless` forces login attempts; `manual` never logs in, so only a pasted session works |
 | `PUBLIC_BASE_URL` | `""` | set to your canonical origin if you use a custom domain, so OAuth metadata and error hints use it |
 
@@ -206,7 +207,7 @@ Quotes live ten minutes. Expired means search again and book with the fresh quot
 
 ### `CAP_EXCEEDED`
 
-The daily or weekly cap, or `MAX_CREDITS_PER_BOOKING`, would be exceeded. The error states which. Raise the relevant var in `wrangler.jsonc` and redeploy if that is what you want.
+The daily or weekly cap, or `MAX_CREDITS_PER_BOOKING`, or `MAX_CASH_PER_BOOKING`, would be exceeded. The error states which. Raise the relevant var in `wrangler.jsonc` and redeploy if that is what you want.
 
 ### Deploy fails on the Durable Object migration
 

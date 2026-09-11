@@ -64,8 +64,9 @@ their SHA-256 is stored, in the Durable Object.
 Vars (plain values in `wrangler.jsonc`, parsed and validated by `src/env.ts#parseConfig`):
 `WRITE_ENABLED="true"`, `MAX_BOOKINGS_PER_DAY="1"`, `MAX_BOOKINGS_PER_WEEK="7"`,
 `MAX_CREDITS_PER_BOOKING="0"` (`0` allows only bookings that cost no credits,
-`"unlimited"` removes the cap), `LOGIN_STRATEGY="auto"` (`auto` | `headless` | `manual`),
-`PUBLIC_BASE_URL=""`.
+`"unlimited"` removes the cap), `MAX_CASH_PER_BOOKING="0"` (the same cap for money, in
+the building's own currency, for pay-as-you-go desks), `LOGIN_STRATEGY="auto"`
+(`auto` | `headless` | `manual`), `PUBLIC_BASE_URL=""`.
 
 The quote lifetime is not configurable. It is the `QUOTE_TTL_SECONDS` constant in
 `src/core/booking-service.ts`, ten minutes.

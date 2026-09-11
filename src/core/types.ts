@@ -359,6 +359,8 @@ export interface CapsConfig {
   maxBookingsPerWeek: number;
   /** `0` allows only bookings that cost no credits; `-1` means no limit. */
   maxCreditsPerBooking: number;
+  /** `0` allows only bookings that cost no money; `-1` means no limit. */
+  maxCashPerBooking: number;
 }
 
 /** Result of {@link BookingService.whoami}. */

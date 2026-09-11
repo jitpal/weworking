@@ -125,6 +125,8 @@ export interface SessionRpc {
     bookingKey: string;
     date: string;
     credits: number;
+    /** Cash price of the booking, in the building's currency. Absent means zero. */
+    amount?: number;
     actor: string;
     dryRun: boolean;
   }): Promise<ReserveResult>;
@@ -527,10 +529,31 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
       );
     }
 
+    // All Access desks cost credits and pay-as-you-go desks cost money, so the credit
+    // cap alone bounds nothing on a cash plan. `amount` is the quoted total, already
+    // MAC-verified; the price is re-checked against `api.quote()` before booking.
+    const amount = payload.amount ?? 0;
+    if (config.maxCashPerBooking >= 0 && amount > config.maxCashPerBooking) {
+      await audit(actor, "create_booking", auditArgs(payload, args), "denied", {
+        credits: payload.credits,
+        dryRun,
+        error: "CAP_EXCEEDED",
+      });
+      throw new AppError(
+        "CAP_EXCEEDED",
+        `This booking costs ${formatMoney(amount, payload.currency)} but MAX_CASH_PER_BOOKING is ${formatMoney(config.maxCashPerBooking, payload.currency)}.`,
+        {
+          hint: "Tell the user the per-booking cash ceiling blocked this; a cheaper slot, or a desk included in their plan, may fit. Do not retry the same quote.",
+          details: { maxCashPerBooking: config.maxCashPerBooking, amount },
+        },
+      );
+    }
+
     const reservation = await session.reserveBooking({
       bookingKey: key,
       date: payload.date,
       credits: payload.credits,
+      amount,
       actor: actor.name,
       dryRun,
     });
@@ -750,6 +773,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
         maxBookingsPerDay: config.maxBookingsPerDay,
         maxBookingsPerWeek: config.maxBookingsPerWeek,
         maxCreditsPerBooking: config.maxCreditsPerBooking,
+        maxCashPerBooking: config.maxCashPerBooking,
       },
       capsRemaining: caps,
       writeEnabled: config.writeEnabled,
