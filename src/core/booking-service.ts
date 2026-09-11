@@ -136,6 +136,8 @@ export interface SessionRpc {
   capsRemaining(date: string): Promise<CapsRemaining>;
   idempotencyGet(key: string): Promise<unknown | undefined>;
   idempotencyPut(key: string, value: unknown, ttlSec?: number): Promise<void>;
+  rememberLocations(locations: Location[]): Promise<void>;
+  getLocation(locationId: string): Promise<Location | undefined>;
   audit(entry: {
     actor: string;
     tool: string;

@@ -32,7 +32,7 @@ import type {
   SpaceType,
   TokenStore,
 } from "../core/types";
-import { AppError } from "../errors";
+import { AppError, toErrorBody } from "../errors";
 import { redact } from "../redact";
 import { DESKTOP_USER_AGENT, type HeaderVariant, MEMBERS_API_BASE, weworkHeaders } from "./headers";
 import {
@@ -43,6 +43,7 @@ import {
   mapBooking,
   mapCities,
   mapCredits,
+  mapLocation,
   mapLocations,
   mapProfile,
   mapWorkspace,
@@ -59,6 +60,7 @@ import type {
   QuoteRequestBody,
   RawBookingResponse,
   RawInventoryDetailsResponse,
+  RawLocation,
   RawMonthlyCreditsResponse,
   RawProfileResponse,
   RawQuoteResponse,
@@ -193,6 +195,17 @@ export interface WeWorkClientOptions {
   /** Injected clock (epoch ms). */
   now?: () => number;
   userAgent?: string;
+  /**
+   * Durable building metadata, normally the session Durable Object. Lets a search
+   * by bare `location_id` send the right `locationOffset` even in a cold isolate.
+   */
+  locationStore?: LocationStore;
+}
+
+/** Persistent building metadata shared across isolates. */
+export interface LocationStore {
+  get(locationId: string): Promise<Location | undefined>;
+  put(locations: Location[]): Promise<void>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -214,12 +227,14 @@ export class WeWorkClient implements WeWorkApi {
    * so it never outlives a request.
    */
   readonly #locations = new Map<string, Location>();
+  readonly #locationStore: LocationStore | undefined;
 
   constructor(opts: WeWorkClientOptions) {
     this.#fetch = opts.fetch;
     this.#tokens = opts.tokens;
     this.#now = opts.now ?? Date.now;
     this.#userAgent = opts.userAgent ?? DESKTOP_USER_AGENT;
+    this.#locationStore = opts.locationStore;
   }
 
   /** Distinct city names WeWork has on-demand inventory in. */
@@ -355,22 +370,18 @@ export class WeWorkClient implements WeWorkApi {
       throw new AppError("VALIDATION", `date must be YYYY-MM-DD, got "${args.date}".`);
     }
 
-    const body = await this.#call({
-      method: "GET",
-      path: "/spaces/get-spaces",
-      label: "get spaces",
-      query: {
-        locationUUIDs: args.locationIds.join(","),
-        date: args.date,
-        duration: GET_SPACES_DURATION,
-        locationOffset: args.locationOffset ?? this.#offsetFor(args.locationIds),
-        type: GET_SPACES_TYPE_DESK,
-        capacity: args.capacity ?? 0,
-        offset: 0,
-        limit: GET_SPACES_LIMIT,
-        isWeb: true,
-      },
-    });
+    // The offset must match the building, or upstream answers with an empty list
+    // (live-verified for New York). Known buildings come from the in-memory cache or
+    // the durable store; an unknown one gets a first pass at +00:00 and a second at
+    // the offset its own results reveal.
+    const knownOffset = args.locationOffset ?? (await this.#offsetFor(args.locationIds));
+    let body = await this.#getSpacesRaw(args, knownOffset ?? "+00:00");
+    if (knownOffset === undefined) {
+      const revealed = this.#offsetRevealedBy(body);
+      if (revealed && revealed !== "+00:00") {
+        body = await this.#getSpacesRaw(args, revealed);
+      }
+    }
 
     const workspaces = arrayAt(
       (body as { getSharedWorkspaces?: unknown } | null)?.getSharedWorkspaces ?? body,
@@ -412,6 +423,7 @@ export class WeWorkClient implements WeWorkApi {
       this.#locations.set(mapped.location.locationId, mapped.location);
       out.push(mapped);
     }
+    if (out.length > 0) this.#rememberLocations(out.map((space) => space.location));
     return out;
   }
 
@@ -734,17 +746,66 @@ export class WeWorkClient implements WeWorkApi {
   }
 
   #rememberLocations(locations: Location[]): Location[] {
+    if (this.#locationStore && locations.length > 0) {
+      this.#locationStore
+        .put(locations)
+        .catch((err) => console.warn("location store write failed", toErrorBody(err)));
+    }
     for (const location of locations) this.#locations.set(location.locationId, location);
     return locations;
   }
 
   /** The UTC offset to send with `get-spaces`, from any location we have seen. */
-  #offsetFor(locationIds: string[]): string {
+  async #offsetFor(locationIds: string[]): Promise<string | undefined> {
     for (const id of locationIds) {
       const offset = this.#locations.get(id)?.timezoneOffset;
       if (offset) return offset;
     }
-    return "+00:00";
+    if (!this.#locationStore) return undefined;
+    for (const id of locationIds) {
+      try {
+        const stored = await this.#locationStore.get(id);
+        if (stored?.timezoneOffset) {
+          this.#locations.set(id, stored);
+          return stored.timezoneOffset;
+        }
+      } catch (err) {
+        console.warn("location store lookup failed", toErrorBody(err));
+      }
+    }
+    return undefined;
+  }
+
+  #getSpacesRaw(args: GetSpacesArgs, locationOffset: string): Promise<unknown> {
+    return this.#call({
+      method: "GET",
+      path: "/spaces/get-spaces",
+      label: "get spaces",
+      query: {
+        locationUUIDs: args.locationIds.join(","),
+        date: args.date,
+        duration: GET_SPACES_DURATION,
+        locationOffset,
+        type: GET_SPACES_TYPE_DESK,
+        capacity: args.capacity ?? 0,
+        offset: 0,
+        limit: GET_SPACES_LIMIT,
+        isWeb: true,
+      },
+    });
+  }
+
+  /** The offset of the first workspace's building in a get-spaces response, if any. */
+  #offsetRevealedBy(body: unknown): string | undefined {
+    const workspaces = arrayAt(
+      (body as { getSharedWorkspaces?: unknown } | null)?.getSharedWorkspaces ?? body,
+      "workspaces",
+    );
+    for (const value of workspaces) {
+      const location = mapLocation((value as { location?: RawLocation }).location);
+      if (location?.timezoneOffset) return location.timezoneOffset;
+    }
+    return undefined;
   }
 }
 

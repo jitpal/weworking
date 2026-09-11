@@ -278,6 +278,7 @@ export interface FakeSession {
 }
 
 export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
+  const locationsStore = new Map<string, Location>();
   const maxPerDay = script.maxPerDay ?? 1;
   const maxPerWeek = script.maxPerWeek ?? 5;
   let usedToday = script.usedToday ?? 0;
@@ -347,6 +348,12 @@ export function createFakeSession(script: FakeSessionScript = {}): FakeSession {
     },
     async idempotencyPut(key, value) {
       idempotency.set(key, value);
+    },
+    async rememberLocations(locations) {
+      for (const location of locations) locationsStore.set(location.locationId, location);
+    },
+    async getLocation(locationId) {
+      return locationsStore.get(locationId);
     },
     async audit(entry) {
       const record: FakeSession["audits"][number] = { tool: entry.tool, outcome: entry.outcome };

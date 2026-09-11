@@ -26,7 +26,7 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import type { CapsRemaining, SessionInfo, SessionRecord } from "../core/types";
+import type { CapsRemaining, Location, SessionInfo, SessionRecord } from "../core/types";
 import { type Config, type Env, parseConfig } from "../env";
 import { AppError } from "../errors";
 import { REDACTED, redact } from "../redact";
@@ -369,6 +369,39 @@ export class WeWorkSession extends DurableObject<Env> {
     );
   }
 
+  // -------------------------------------------------------------- locations
+
+  /**
+   * Remembers building metadata (timezone, offset, currency) so a later search by
+   * bare `location_id` can send WeWork the right `locationOffset` without a
+   * warm per-request cache. Live-verified: a wrong offset makes get-spaces answer
+   * an empty list for buildings west of UTC.
+   */
+  async rememberLocations(locations: Location[]): Promise<void> {
+    const now = this.now();
+    for (const location of locations) {
+      if (!location?.locationId) continue;
+      this.#sql.exec(
+        "INSERT OR REPLACE INTO locations (location_id, json, updated_at) VALUES (?, ?, ?)",
+        location.locationId,
+        JSON.stringify(location),
+        now,
+      );
+    }
+  }
+
+  async getLocation(locationId: string): Promise<Location | undefined> {
+    const row = this.#sql
+      .exec<{ json: string }>("SELECT json FROM locations WHERE location_id = ?", locationId)
+      .toArray()[0];
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.json) as Location;
+    } catch {
+      return undefined;
+    }
+  }
+
   // ------------------------------------------------------------------ audit
 
   /** Appends one audit row. `entry.args` is redacted here, never by the caller. */
@@ -521,6 +554,11 @@ export class WeWorkSession extends DurableObject<Env> {
       credits INTEGER,
       dry_run INTEGER NOT NULL DEFAULT 0,
       error TEXT
+    )`);
+    sql.exec(`CREATE TABLE IF NOT EXISTS locations (
+      location_id TEXT PRIMARY KEY,
+      json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
     )`);
     sql.exec("CREATE INDEX IF NOT EXISTS idx_ledger_date ON bookings_ledger (date, status)");
     sql.exec("CREATE INDEX IF NOT EXISTS idx_ledger_week ON bookings_ledger (iso_week, status)");

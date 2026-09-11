@@ -130,7 +130,7 @@ export async function runSearchAvailability(
   // Live-verified: WeWork answers with an empty list (totalCount 0) for buildings
   // where this membership cannot book a shared desk, not with an error. Say so, or
   // an agent will keep retrying dates.
-  const emptyNote = `WeWork listed no bookable shared desks for this account at the requested building(s) on ${input.date}. That usually means the membership cannot book there (pay-as-you-go accounts are often limited to certain regions) rather than that the desks are full. Try a different building or city before trying other dates.`;
+  const emptyNote = `WeWork listed no bookable shared desks for this account at the requested building(s) on ${input.date}. That usually means the membership cannot book there (pay-as-you-go accounts are often limited to certain regions) rather than that the desks are full. Try a different building or city before trying other dates. If you searched by location_id, a city search (city=...) is the reliable way to see what this account can book there.`;
   if (results.length === 0) structured.note = emptyNote;
 
   const text =

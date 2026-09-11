@@ -44,6 +44,10 @@ function buildService(env: Env, actor: Actor, req: Request) {
   const api = new WeWorkClient({
     fetch: globalThis.fetch.bind(globalThis),
     tokens: new DurableTokenStore(session),
+    locationStore: {
+      get: (id) => session.getLocation(id),
+      put: (locations) => session.rememberLocations(locations),
+    },
   });
   return createBookingService({
     api,
