@@ -396,13 +396,25 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
     const spaces = await api.getSpaces(spacesArgs);
 
     const expSeconds = Math.floor(now() / 1000) + QUOTE_TTL_SECONDS;
+    const limit = clampLimit(args.limit);
     const results: AvailabilityResult[] = [];
 
+    // Drop what cannot be booked, then take the best `limit` *before* the pricing
+    // loop below. Each surviving space costs one or two upstream subrequests
+    // (`resolveBookingSpaceId`, and `quote` on a cash account), so a ten-building
+    // city search over every space WeWork returned would walk into the Workers
+    // subrequest ceiling. Most seats first is the tie-break an agent would make
+    // anyway; the final ordering is still decided after pricing.
+    const candidates: Array<{ space: SpaceAvailability; tz: string }> = [];
     for (const space of spaces) {
       if (space.seatsAvailable <= 0) continue;
       const tz = space.location.timezone || space.timezone || "UTC";
       if (compareDates(date, todayIn(tz, now())) < 0) throw pastDate(date);
+      candidates.push({ space, tz });
+    }
+    candidates.sort((a, b) => b.space.seatsAvailable - a.space.seatsAvailable);
 
+    for (const { space, tz } of candidates.slice(0, limit)) {
       const window = resolveWindow(space, date, tz, startTime, endTime);
       const bookingSpaceId = await api.resolveBookingSpaceId(space);
       const payload: QuotePayload = {
@@ -491,7 +503,7 @@ export function createBookingService(deps: BookingServiceDeps): BookingServiceIm
           b.seatsAvailable - a.seatsAvailable,
       );
     }
-    return results.slice(0, clampLimit(args.limit));
+    return results.slice(0, limit);
   }
 
   /* ---------------------------------------------------------------------- */

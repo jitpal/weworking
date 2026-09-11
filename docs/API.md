@@ -138,9 +138,9 @@ At least one of `query`, `city`, or `lat`+`lng` is required.
 | `end_time` | string | local `HH:MM`; defaults to closing time |
 | `space_type` | string | `desk` (default) |
 | `capacity` | integer | minimum seats; desks are 1 |
-| `limit` | integer | default 20 |
+| `limit` | integer | default 20, max 100. Also caps the work: only this many spaces are priced |
 
-Exactly one of `location_id`, `city`, or `lat`+`lng` is required. Every result is a bookable desk option for that date: seats, price, local hours, the building (with `distanceKm` on a nearby search), and the signed `quote`.
+Exactly one of `location_id`, `city`, or `lat`+`lng` is required. `limit` is applied before pricing, not after: the spaces with the most seats free are kept, and only those are resolved and quoted upstream. A small `limit` is therefore a faster search, not just a shorter answer. Every result is a bookable desk option for that date: seats, price, local hours, the building (with `distanceKm` on a nearby search), and the signed `quote`.
 
 `GET /api/availability?location_id=5a9c1f70-...&date=2026-09-21&start_time=09:00&end_time=17:00`
 

@@ -311,6 +311,47 @@ describe("searchAvailability", () => {
     expect(results).toHaveLength(10);
   });
 
+  it("prices at most `limit` spaces, however many the buildings returned", async () => {
+    // Every space here is cash-priced, so each one the loop reaches costs a
+    // resolveBookingSpaceId *and* a quote subrequest.
+    const spaces = Array.from({ length: 40 }, (_, index) =>
+      makeSpace({
+        spaceId: `space-${index}`,
+        credits: 0,
+        seatsAvailable: index + 1,
+        location: makeLocation({ currency: "GBP" }),
+      }),
+    );
+    const harness = createHarness({
+      apiScript: { spaces, price: { credits: 0, creditRatio: 20, amount: 84, currency: "GBP" } },
+    });
+
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+      limit: 3,
+    });
+
+    expect(results).toHaveLength(3);
+    expect(harness.api.calls.filter((c) => c.method === "quote")).toHaveLength(3);
+    expect(harness.api.calls.filter((c) => c.method === "resolveBookingSpaceId")).toHaveLength(3);
+    // The three kept are the roomiest, not the first three upstream listed.
+    expect(results.map((r) => r.spaceId).sort()).toEqual(["space-37", "space-38", "space-39"]);
+  });
+
+  it("keeps the fan-out bounded by the default limit too", async () => {
+    const spaces = Array.from({ length: 50 }, (_, index) =>
+      makeSpace({ spaceId: `space-${index}`, credits: 0, seatsAvailable: index + 1 }),
+    );
+    const harness = createHarness({ apiScript: { spaces } });
+    const results = await harness.service.searchAvailability({
+      locationId: "loc-poultry",
+      date: DATE,
+    });
+    expect(results).toHaveLength(20);
+    expect(harness.api.calls.filter((c) => c.method === "resolveBookingSpaceId")).toHaveLength(20);
+  });
+
   it("hides sold-out spaces", async () => {
     const harness = createHarness({
       apiScript: { spaces: [makeSpace({ seatsAvailable: 0 }), makeSpace({ spaceId: "s2" })] },
