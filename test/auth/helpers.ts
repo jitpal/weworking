@@ -3,6 +3,7 @@
  * browser would do for us (CSRF cookie out, form field in, session cookie back).
  */
 
+import { ADMIN_COOKIE, adminSessionCookie } from "../../src/auth/admin-session";
 import type { Env } from "../../src/env";
 
 /** Valid 32-byte hex keys, so `parseConfig()` is happy. */
@@ -16,7 +17,6 @@ export function fakeEnv(overrides: Partial<Record<string, unknown>> = {}): Env {
     ADMIN_PASSWORD,
     COOKIE_SIGNING_KEY: HEX_KEY_B,
     QUOTE_SIGNING_KEY: HEX_KEY_A,
-    AUTH_TOKENS: "[]",
     WRITE_ENABLED: "true",
     MAX_BOOKINGS_PER_DAY: "1",
     MAX_BOOKINGS_PER_WEEK: "5",
@@ -54,3 +54,21 @@ export function hiddenField(html: string, name: string): string {
 
 /** Headers a browser sends when navigating. */
 export const HTML_HEADERS = { Accept: "text/html,application/xhtml+xml" };
+
+/**
+ * A cookie jar holding a valid `ww_admin` session for `env`.
+ *
+ * `/admin/*` accepts nothing else, so almost every admin test starts here. It signs
+ * the same cookie `POST /admin/login` would, without driving the form.
+ */
+export async function adminJar(env: Env = fakeEnv()): Promise<Record<string, string>> {
+  const header = await adminSessionCookie(env);
+  const pair = (header ?? "").split(";")[0] ?? "";
+  const index = pair.indexOf("=");
+  return { [ADMIN_COOKIE]: decodeURIComponent(pair.slice(index + 1)) };
+}
+
+/** The `Cookie` header for a signed-in operator. */
+export async function adminCookie(env: Env = fakeEnv()): Promise<string> {
+  return cookieHeader(await adminJar(env));
+}

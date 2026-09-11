@@ -6,6 +6,7 @@
  *     refresh or login attempts into one upstream call;
  *   - the idempotency table, so a retried `create_booking` cannot double-book;
  *   - the booking ledger that enforces the daily/weekly caps;
+ *   - the API keys the operator minted at `/admin/keys`, as SHA-256 digests;
  *   - the audit log.
  *
  * Keeping all of that in one object is what makes the caps and the mutex correct:
@@ -26,7 +27,7 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
-import type { CapsRemaining, Location, SessionInfo, SessionRecord } from "../core/types";
+import type { CapsRemaining, Location, Scope, SessionInfo, SessionRecord } from "../core/types";
 import { type Config, type Env, parseConfig } from "../env";
 import { AppError } from "../errors";
 import { REDACTED, redact } from "../redact";
@@ -50,6 +51,18 @@ export const IDEMPOTENCY_TTL_SEC = 24 * 60 * 60;
 
 /** Audit rows older than this are pruned by {@link WeWorkSession.maintain}. */
 export const AUDIT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * How often {@link WeWorkSession.matchApiKey} rewrites `last_used_at`.
+ *
+ * Every authenticated request matches a key, so an unconditional write would turn a
+ * read into a write on the hot path. One write per key per minute is enough for the
+ * "last used" column on the admin page to be useful.
+ */
+export const API_KEY_LAST_USED_THROTTLE_MS = 60 * 1000;
+
+/** Longest an API key name may be. Names are labels for the audit log, not prose. */
+export const API_KEY_NAME_MAX = 64;
 
 /** Ledger statuses that consume a cap slot. */
 const ACTIVE_STATUSES = "('reserved','confirmed')";
@@ -100,6 +113,31 @@ export interface AuditInput {
   error?: string;
 }
 
+/**
+ * One API key as {@link WeWorkSession.listApiKeys} reports it.
+ *
+ * There is no field for the key itself and there never will be: only its SHA-256 is
+ * stored, and that is not returned either.
+ */
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  scopes: Scope[];
+  /** ISO-8601 UTC. */
+  createdAt: string;
+  /** ISO-8601 UTC; absent until the key authenticates a request. */
+  lastUsedAt?: string;
+  /** ISO-8601 UTC; present only on a revoked key. */
+  revokedAt?: string;
+}
+
+/** What {@link WeWorkSession.matchApiKey} returns for a live key. */
+export interface ApiKeyMatch {
+  id: string;
+  name: string;
+  scopes: Scope[];
+}
+
 /** Summary returned by {@link WeWorkSession.maintain} (cron). */
 export interface MaintenanceSummary {
   refreshed: boolean;
@@ -120,6 +158,15 @@ interface SessionRow extends Record<string, SqlStorageValue> {
 
 interface CountRow extends Record<string, SqlStorageValue> {
   n: number;
+}
+
+interface ApiKeyRow extends Record<string, SqlStorageValue> {
+  id: string;
+  name: string;
+  scopes: string;
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
 }
 
 interface AuditRow extends Record<string, SqlStorageValue> {
@@ -402,6 +449,122 @@ export class WeWorkSession extends DurableObject<Env> {
     }
   }
 
+  // --------------------------------------------------------------- api keys
+
+  /**
+   * Stores a key the admin pages just minted.
+   *
+   * The caller generates the key, hashes it and throws the plaintext away; this
+   * object only ever sees `sha256`. Validation is repeated here rather than trusted
+   * from the caller, because this table is what the front door authenticates
+   * against.
+   *
+   * @throws AppError `VALIDATION` for a bad name, scope set or digest, and for a
+   * duplicate id or digest.
+   */
+  async createApiKey(input: {
+    id: string;
+    name: string;
+    sha256: string;
+    scopes: Scope[];
+  }): Promise<void> {
+    const id = requireText(input.id, "id");
+    const name = requireKeyName(input.name);
+    const sha256 = requireDigest(input.sha256);
+    const scopes = requireScopes(input.scopes);
+
+    if (this.#count("SELECT COUNT(*) AS n FROM api_keys WHERE id = ?", id) > 0) {
+      throw new AppError("VALIDATION", "An API key with that id already exists.");
+    }
+    if (this.#count("SELECT COUNT(*) AS n FROM api_keys WHERE sha256 = ?", sha256) > 0) {
+      throw new AppError("VALIDATION", "That API key already exists.");
+    }
+
+    this.#sql.exec(
+      `INSERT INTO api_keys (id, name, sha256, scopes, created_at, last_used_at, revoked_at)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL)`,
+      id,
+      name,
+      sha256,
+      JSON.stringify(scopes),
+      this.now(),
+    );
+  }
+
+  /** Every key, newest first, revoked ones included. Never returns a digest. */
+  async listApiKeys(): Promise<ApiKeySummary[]> {
+    const rows = this.#sql
+      .exec<ApiKeyRow>(
+        `SELECT id, name, scopes, created_at, last_used_at, revoked_at
+           FROM api_keys ORDER BY created_at DESC, rowid DESC`,
+      )
+      .toArray();
+    return rows.map((row) => {
+      const summary: ApiKeySummary = {
+        id: row.id,
+        name: row.name,
+        scopes: decodeScopes(row.scopes),
+        createdAt: new Date(row.created_at).toISOString(),
+      };
+      if (row.last_used_at !== null) summary.lastUsedAt = new Date(row.last_used_at).toISOString();
+      if (row.revoked_at !== null) summary.revokedAt = new Date(row.revoked_at).toISOString();
+      return summary;
+    });
+  }
+
+  /**
+   * Revokes a key. The row is kept so the audit trail still resolves its name.
+   *
+   * @returns `true` when this call revoked it; `false` when the id is unknown or it
+   * was already revoked.
+   */
+  async revokeApiKey(id: string): Promise<boolean> {
+    const key = requireText(id, "id");
+    const live = this.#count(
+      "SELECT COUNT(*) AS n FROM api_keys WHERE id = ? AND revoked_at IS NULL",
+      key,
+    );
+    if (live === 0) return false;
+    this.#sql.exec(
+      "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+      this.now(),
+      key,
+    );
+    return true;
+  }
+
+  /**
+   * The front door's lookup: a presented key's digest to the actor behind it.
+   *
+   * Revoked keys never match, so revoking one takes effect on the next request.
+   * `last_used_at` is refreshed at most once per {@link API_KEY_LAST_USED_THROTTLE_MS}
+   * per key.
+   *
+   * @param sha256 lower-case hex digest of the presented key.
+   * @returns the key's id, name and scopes, or `undefined` when nothing active matches.
+   */
+  async matchApiKey(sha256: string): Promise<ApiKeyMatch | undefined> {
+    const digest = typeof sha256 === "string" ? sha256.trim().toLowerCase() : "";
+    // A malformed digest cannot match anything; answer "no" rather than throwing, so
+    // a junk credential is a 401 and never a 500.
+    if (!/^[0-9a-f]{64}$/.test(digest)) return undefined;
+
+    const row = this.#sql
+      .exec<ApiKeyRow>(
+        `SELECT id, name, scopes, created_at, last_used_at, revoked_at
+           FROM api_keys WHERE sha256 = ? AND revoked_at IS NULL`,
+        digest,
+      )
+      .toArray()[0];
+    if (!row) return undefined;
+
+    const now = this.now();
+    if (row.last_used_at === null || now - row.last_used_at >= API_KEY_LAST_USED_THROTTLE_MS) {
+      this.#sql.exec("UPDATE api_keys SET last_used_at = ? WHERE id = ?", now, row.id);
+    }
+    return { id: row.id, name: row.name, scopes: decodeScopes(row.scopes) };
+  }
+
   // ------------------------------------------------------------------ audit
 
   /** Appends one audit row. `entry.args` is redacted here, never by the caller. */
@@ -554,6 +717,15 @@ export class WeWorkSession extends DurableObject<Env> {
       credits INTEGER,
       dry_run INTEGER NOT NULL DEFAULT 0,
       error TEXT
+    )`);
+    sql.exec(`CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sha256 TEXT NOT NULL UNIQUE,
+      scopes TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER,
+      revoked_at INTEGER
     )`);
     sql.exec(`CREATE TABLE IF NOT EXISTS locations (
       location_id TEXT PRIMARY KEY,
@@ -785,6 +957,49 @@ function normaliseDate(date: string): string {
     throw new AppError("VALIDATION", "date must be a calendar date in YYYY-MM-DD form.");
   }
   return trimmed;
+}
+
+/** A key name: something the operator will recognise in the list and the audit log. */
+function requireKeyName(value: string): string {
+  const trimmed = requireText(value, "name");
+  if (trimmed.length > API_KEY_NAME_MAX) {
+    throw new AppError(
+      "VALIDATION",
+      `An API key name must be 1 to ${API_KEY_NAME_MAX} characters.`,
+    );
+  }
+  return trimmed;
+}
+
+/** Lower-case hex SHA-256, exactly 64 characters. */
+function requireDigest(value: string): string {
+  const trimmed = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!/^[0-9a-f]{64}$/.test(trimmed)) {
+    throw new AppError("VALIDATION", "sha256 must be a 64-character hex SHA-256 digest.");
+  }
+  return trimmed;
+}
+
+/** A non-empty subset of the three scopes, de-duplicated and in canonical order. */
+function requireScopes(value: Scope[]): Scope[] {
+  const offered = Array.isArray(value) ? value : [];
+  const scopes = SCOPE_ORDER.filter((scope) => offered.includes(scope));
+  if (scopes.length === 0) {
+    throw new AppError("VALIDATION", "scopes must be a non-empty subset of read, write, admin.");
+  }
+  return scopes;
+}
+
+const SCOPE_ORDER: readonly Scope[] = ["read", "write", "admin"] as const;
+
+/** Reads the stored `scopes` JSON back, tolerating a row written by an older build. */
+function decodeScopes(json: string): Scope[] {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? SCOPE_ORDER.filter((scope) => parsed.includes(scope)) : [];
+  } catch {
+    return [];
+  }
 }
 
 function requireText(value: string, field: string): string {

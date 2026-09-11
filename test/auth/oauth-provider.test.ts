@@ -7,8 +7,9 @@
  * This is the only test that proves the three halves fit together — the props we
  * pass to `completeAuthorization()`, the props the provider hands the API handler,
  * and the `Actor` `resolveActor()` builds from them. It also covers the
- * `resolveExternalToken` seam, which is what lets a static `AUTH_TOKENS` bearer
- * reach `/mcp` through the provider instead of being rejected as an unknown token.
+ * `resolveExternalToken` seam with a real key in a real Durable Object, which is
+ * what lets an API key reach `/mcp` through the provider instead of being rejected
+ * as an unknown token.
  */
 
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
@@ -16,14 +17,14 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { resolveActor } from "../../src/auth/guard";
 import { createOAuthProvider, landingRoutes, oauthRoutes } from "../../src/auth/oauth";
-import { sha256Hex } from "../../src/auth/tokens";
+import { generateApiKey } from "../../src/auth/tokens";
 import type { Env } from "../../src/env";
+import { getSessionStub } from "../../src/session/do";
 import { cookieHeader, cookiesFrom, hiddenField } from "./helpers";
 
 const BASE = "https://weworking.test";
 const REDIRECT_URI = "https://client.example/callback";
 const ADMIN_PASSWORD = "test-admin-password"; // from vitest.config.ts bindings
-const STATIC_TOKEN = "integration-static-token";
 
 /** The protected handler: echoes the Actor the provider's props resolve to. */
 const apiHandler = async (request: Request, workerEnv: Env, ctx: ExecutionContext) => {
@@ -47,13 +48,19 @@ const provider = createOAuthProvider({
 });
 
 async function testEnv(): Promise<Env> {
-  const digest = await sha256Hex(STATIC_TOKEN);
-  return {
-    ...env,
-    AUTH_TOKENS: JSON.stringify([
-      { name: "integration", sha256: digest, scopes: ["read", "write"] },
-    ]),
-  } as unknown as Env;
+  return env as unknown as Env;
+}
+
+/** Mints a real key in the real session Durable Object and returns its plaintext. */
+async function mintKey(workerEnv: Env, name = "integration"): Promise<string> {
+  const { token, sha256 } = await generateApiKey();
+  await getSessionStub(workerEnv).createApiKey({
+    id: crypto.randomUUID(),
+    name,
+    sha256,
+    scopes: ["read", "write"],
+  });
+  return token;
 }
 
 /** Sends one request through the provider, as the Worker's `fetch` would. */
@@ -218,10 +225,11 @@ describe("workers-oauth-provider integration", () => {
     });
   });
 
-  it("accepts a static AUTH_TOKENS bearer on a protected route via resolveExternalToken", async () => {
+  it("accepts an API key on a protected route via resolveExternalToken", async () => {
     const workerEnv = await testEnv();
+    const key = await mintKey(workerEnv);
     const response = await fetchThroughProvider(
-      new Request(`${BASE}/api/whoami`, { headers: { Authorization: `Bearer ${STATIC_TOKEN}` } }),
+      new Request(`${BASE}/api/whoami`, { headers: { Authorization: `Bearer ${key}` } }),
       workerEnv,
     );
     expect(response.status).toBe(200);
@@ -232,6 +240,28 @@ describe("workers-oauth-provider integration", () => {
       scopes: ["read", "write"],
       accountId: "default",
     });
+  });
+
+  it("rejects the same key once it is revoked", async () => {
+    const workerEnv = await testEnv();
+    const { token, sha256 } = await generateApiKey();
+    const id = crypto.randomUUID();
+    const session = getSessionStub(workerEnv);
+    await session.createApiKey({ id, name: "short-lived", sha256, scopes: ["read"] });
+
+    const allowed = await fetchThroughProvider(
+      new Request(`${BASE}/api/whoami`, { headers: { Authorization: `Bearer ${token}` } }),
+      workerEnv,
+    );
+    expect(allowed.status).toBe(200);
+
+    await session.revokeApiKey(id);
+    const refused = await fetchThroughProvider(
+      new Request(`${BASE}/api/whoami`, { headers: { Authorization: `Bearer ${token}` } }),
+      workerEnv,
+    );
+    expect(refused.status).toBe(401);
+    expect(refused.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
   });
 
   it("still rejects an unknown bearer token with the challenge", async () => {

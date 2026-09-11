@@ -11,11 +11,11 @@ Scope: one Worker deployment, in the deployer's own Cloudflare account, serving 
 | WeWork username and password | optional secrets `WEWORK_USERNAME` / `WEWORK_PASSWORD` in Cloudflare | full takeover of the WeWork account: bookings, profile, whatever WeWork exposes. Not limited to this tool |
 | Auth0 access token (~12h) | `WeWorkSession` Durable Object SQLite | full WeWork API access as the user until it expires |
 | Auth0 refresh token | same | renewable API access until revoked by signing out on `members.wework.com` or changing the password |
-| `ADMIN_PASSWORD` | Cloudflare secret | can approve OAuth clients, replace the stored session, read the audit log. In other words, bootstrap full access to the deployment |
+| `ADMIN_PASSWORD` | Cloudflare secret | can approve OAuth clients, mint API keys, replace the stored session, read the audit log. In other words, bootstrap full access to the deployment |
 | `QUOTE_SIGNING_KEY` | Cloudflare secret | lets an attacker forge booking quotes, bypassing the "search first" guarantee. Still subject to scopes, caps, and the kill switch |
 | `COOKIE_SIGNING_KEY` | Cloudflare secret | forge an admin session cookie |
-| Static bearer tokens | plaintext only in client configs; SHA-256 in `AUTH_TOKENS` | see [per-scope capability](#what-a-leaked-worker-token-can-do) below |
-| OAuth access/refresh tokens and grants | `OAUTH_KV` | same as a static token of the granted scopes |
+| API keys (SHA-256 only) in the Durable Object | plaintext only in client configs; SHA-256 in the `api_keys` table of the `WeWorkSession` Durable Object | see [per-scope capability](#what-a-leaked-worker-token-can-do) below. The stored hash is not a credential: a dump of the Durable Object cannot be replayed |
+| OAuth access/refresh tokens and grants | `OAUTH_KV` | same as an API key of the granted scopes |
 | WeWork credits | WeWork's side | money. A monthly allowance, spendable by anything with `write` |
 | Booking history and home location | Durable Object ledger and audit log, plus upstream | discloses where the user works and when they are there |
 
@@ -46,7 +46,7 @@ Credits and physical-presence data are the reason this is worth protecting at al
 [ members.wework.com, idp.wework.com ]  -- not under our control, undocumented
 ```
 
-1. **Front door.** Everything reaching `/mcp`, `/api/*`, or `/admin/*` is untrusted until the guard resolves an `Actor { kind, name, scopes, accountId }`. No anonymous path exists except `/healthz`, `/api/openapi.json`, and the OAuth endpoints.
+1. **Front door.** Everything reaching `/mcp` or `/api/*` is untrusted until the guard resolves an `Actor { kind, name, scopes, accountId }`, from an OAuth grant or from an API key matched by SHA-256 in the Durable Object. `/admin/*` is separate: it takes the signed admin cookie and nothing else. No anonymous path exists except `/healthz`, `/api/openapi.json`, and the OAuth endpoints.
 2. **Session store.** Only the Worker can talk to the Durable Object, and the DO's only exposed operations are "give me a usable token for an upstream call" plus session/cap/audit bookkeeping. No RPC method returns a token to a client-facing response path.
 3. **WeWork.** Treated as hostile-by-accident: responses are parsed defensively, HTTP 200 is not taken as success (`BookingStatus` is checked), and nothing from upstream is interpolated into HTML without escaping.
 
@@ -58,9 +58,11 @@ The agent host (Claude Code, Cursor, claude.ai) sits outside boundary 1. It is t
 | --- | --- | --- |
 | `read` | see profile, email, credit balance, home location, every booking, search availability, issue quotes | book, cancel, change the session, read the audit log |
 | `write` | everything `read` can, plus book and cancel within `MAX_BOOKINGS_PER_DAY`, `MAX_BOOKINGS_PER_WEEK`, `MAX_CREDITS_PER_BOOKING`, only from a valid signed quote, only while `WRITE_ENABLED="true"` | exceed the caps, book without a fresh quote, retrieve the WeWork token, read or alter the stored session |
-| `admin` | everything above, plus read the audit log, inspect session status, and **replace the stored session** | read back the stored access or refresh token (they are write-only from the outside) |
+| `admin` | nothing beyond `write` today. It can be granted and it can be minted, but no route requires it | reach `/admin/*` at all: those pages take the admin cookie only. So it cannot mint keys, read the audit log, or replace the stored session |
 
-So the blast radius of a leaked `write` token is bounded in money by the caps: at the defaults, one booking per day and five per week. That is the point of the caps. They exist for a misbehaving or compromised agent, not for the user's convenience. A leaked `admin` token is as bad as the admin password for everything except direct token exfiltration.
+So the blast radius of a leaked `write` credential is bounded in money by the caps: at the defaults, one booking per day and five per week. That is the point of the caps. They exist for a misbehaving or compromised agent, not for the user's convenience.
+
+Minting keys is a capability of the **admin password**, not of any agent credential: `/admin/keys` sits behind the same browser sign-in as the rest of `/admin/*`, and every mint and revocation is written to the audit log (with the key's name and scopes, never the key).
 
 No scope can retrieve a WeWork credential. Escalating from any Worker token to the WeWork account itself requires a bug, which is exactly what [SECURITY.md](../SECURITY.md) asks you to report.
 
@@ -72,7 +74,8 @@ Therefore:
 
 - WeWork access and refresh tokens exist only inside the Durable Object and in the `Authorization` header of outbound upstream requests. No tool output, `structuredContent` field, `summary` string, error `message`, or error `hint` contains one.
 - `whoami` reports session **state** (`valid`, `expiring`, `expired`, `none`), not session contents.
-- `/healthz` reports presence booleans and counts, never values.
+- `/healthz` reports presence booleans, never values.
+- An API key is displayed on exactly one page render, when it is minted. Nothing else in the worker can produce it: only its SHA-256 is stored, and no page, route or log line shows even that.
 - The admin password and signing keys are never echoed, not even masked.
 - All logging goes through `src/redact.ts` (`redact`, `redactHeaders`) which strips `Authorization`, `WeWorkAuth`, `Cookie`, `Set-Cookie`, token-ish fields, and email addresses before anything reaches the Workers log stream.
 - The `/admin/connect` paste flow keeps the credential on the boundary: the user pastes it into a browser form over HTTPS, never into a chat window. The `book-a-desk` skill instructs agents to refuse to accept a password or token in conversation and to send the user to the connect page instead.
@@ -108,5 +111,5 @@ Running this as a shared service for other people's WeWork accounts is outside t
 - **Terms of service.** Automating an account may breach WeWork's terms or an employer's agreement. WeWork could suspend the account. Nothing technical mitigates this; it is the deployer's decision and the disclaimer is prominent for that reason.
 - **Cloudflare as a dependency.** Secrets, the Durable Object, and KV are all visible to a compromised Cloudflare account. Protect it accordingly.
 - **Agent host compromise.** A malicious or prompt-injected agent with a `write` token can book a desk you did not want, up to the caps. Mitigations: `read`-only tokens by default, low caps, the audit log, and `dry_run` when the user asks what would happen.
-- **`ADMIN_PASSWORD` is a single factor.** It gates the OAuth approval screen and `/admin/*`. Choose a long random value. Failed attempts are rate limited per Worker instance only, and there is no second factor.
+- **`ADMIN_PASSWORD` is a single factor.** It gates the OAuth approval screen and `/admin/*`, which includes minting API keys. Choose a long random value. Failed attempts are rate limited per Worker instance only, and there is no second factor. One sign-in serves both surfaces for the life of the cookie (12 hours).
 - **Upstream data in the UI.** Building names and addresses come from WeWork and are rendered on the admin pages; they are escaped, but a novel injection path there is a plausible bug class.

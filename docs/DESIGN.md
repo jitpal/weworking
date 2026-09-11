@@ -27,7 +27,7 @@ Bindings:
 Secrets (`wrangler secret put`, `.dev.vars` locally; `.dev.vars.example` committed):
 - `WEWORK_USERNAME`, `WEWORK_PASSWORD` (optional if user only uses connect page)
 - `ADMIN_PASSWORD` (gates OAuth approve screen + /admin/*)
-- `AUTH_TOKENS` JSON array `[{"name":"claude-code","sha256":"<hex>","scopes":["read","write"]}]` (optional)
+- (superseded) `AUTH_TOKENS` static tokens. API keys are minted at `/admin/keys` and stored hashed in the Durable Object instead; there is no token secret.
 - `QUOTE_SIGNING_KEY` (32+ random bytes hex)
 - `COOKIE_SIGNING_KEY` (admin session cookie)
 Vars (plain, in wrangler.jsonc `vars`, overridable):
@@ -41,7 +41,7 @@ package.json package-lock.json tsconfig.json vitest.config.ts biome.jsonc wrangl
 .github/workflows/ci.yml  .github/workflows/deploy.yml
 docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md WEWORK_API.md THREAT_MODEL.md CAPTURE_GUIDE.md
 plugin/ plugin.json mcp.json skills/book-a-desk/SKILL.md
-scripts/ hash-token.mjs  record-fixture.mjs (manual, live, redacts)
+scripts/ record-fixture.mjs (manual, live, redacts)
 src/
   index.ts                 # composes everything; exports default fetch + scheduled + DO class
   env.ts                   # Env type + config parsing (vars -> typed Config)
@@ -68,8 +68,8 @@ src/
     token-store.ts         # TokenStore interface + DO-backed impl used by worker side
     cron.ts                # scheduled(): refresh if expiring < 6h, prune
   auth/
-    guard.ts               # resolves Actor from request: OAuth token (via provider props) or static bearer
-    tokens.ts              # AUTH_TOKENS parsing, constant-time sha256 compare
+    guard.ts               # resolves Actor from request: OAuth token (via provider props) or API key
+    tokens.ts              # API key minting, sha256 and constant-time compare
     oauth.ts               # OAuthProvider wiring: authorize page (admin password), token endpoints
     admin-session.ts       # signed cookie for /admin pages
   mcp/
@@ -122,14 +122,14 @@ See [WEWORK_API.md](./WEWORK_API.md) for the endpoint-level detail. Key rules: a
 `quote = base64url(json(QuotePayload)) + "." + base64url(hmacSha256(QUOTE_SIGNING_KEY, payloadB64))`. verify: constant-time compare, exp check, accountId match. create_booking accepts ONLY a quote.
 
 ## 7. Durable Object `WeWorkSession` (SQLite)
-Tables: `session(id TEXT PK, access_token, refresh_token, expires_at INT, obtained_at INT, source, user_uuid, last_error)`, `idempotency(key PK, kind, result_json, created_at)`, `bookings_ledger(booking_id PK, date, credits, created_at, actor, dry_run INT)`, `audit(id AUTOINC, ts, actor, tool, args_redacted, outcome, booking_id, credits, dry_run)`.
-RPC methods (use DO RPC, class extends DurableObject): `getAccessToken({minTtlSec, force})` (coalesce in-flight login/refresh via instance field promise; strategy order: refresh -> headless login (if creds present & LOGIN_STRATEGY != manual) -> throw SESSION_MISSING/UPSTREAM_BLOCKED), `setSession(rec)`, `getSessionInfo()`, `clearSession()`, `checkAndReserveCap({date, credits, dryRun})`, `recordBooking(...)`, `releaseBooking(bookingId)`, `idempotencyGet/Put`, `audit(entry)`, `listAudit({limit})`, `maintain()` (cron: refresh if <6h, prune). Never log tokens.
+Tables: `session(id TEXT PK, access_token, refresh_token, expires_at INT, obtained_at INT, source, user_uuid, last_error)`, `api_keys(id TEXT PK, name, sha256 UNIQUE, scopes JSON, created_at INT, last_used_at INT, revoked_at INT)`, `idempotency(key PK, kind, result_json, created_at)`, `bookings_ledger(booking_id PK, date, credits, created_at, actor, dry_run INT)`, `audit(id AUTOINC, ts, actor, tool, args_redacted, outcome, booking_id, credits, dry_run)`.
+RPC methods (use DO RPC, class extends DurableObject): `getAccessToken({minTtlSec, force})` (coalesce in-flight login/refresh via instance field promise; strategy order: refresh -> headless login (if creds present & LOGIN_STRATEGY != manual) -> throw SESSION_MISSING/UPSTREAM_BLOCKED), `setSession(rec)`, `getSessionInfo()`, `clearSession()`, `checkAndReserveCap({date, credits, dryRun})`, `recordBooking(...)`, `releaseBooking(bookingId)`, `idempotencyGet/Put`, `audit(entry)`, `listAudit({limit})`, `createApiKey({id,name,sha256,scopes})`, `listApiKeys()`, `revokeApiKey(id)`, `matchApiKey(sha256)`, `maintain()` (cron: refresh if <6h, prune). Never log tokens.
 
 ## 8. Front door
-- `/mcp` (POST/GET) and `/api/*` are protected: Actor from OAuth access token (workers-oauth-provider validates; props {name:"admin", scopes:["read","write","admin"]}) OR `Authorization: Bearer <static>` matched against AUTH_TOKENS by sha256. Guard returns 401 with `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"` so MCP clients discover OAuth.
+- `/mcp` (POST/GET) and `/api/*` are protected: Actor from OAuth access token (workers-oauth-provider validates; props {name, scopes}) OR `Authorization: Bearer ww_<key>` matched by sha256 against the `api_keys` table in the Durable Object (superseding the AUTH_TOKENS secret in this section). Guard returns 401 with `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"` so MCP clients discover OAuth.
 - OAuth: `OAuthProvider({ apiRoute: ["/mcp","/api/"], apiHandler, defaultHandler, authorizeEndpoint:"/oauth/authorize", tokenEndpoint:"/oauth/token", clientRegistrationEndpoint:"/oauth/register" })`. Authorize page: minimal HTML form, ADMIN_PASSWORD, shows client name + requested scopes, approve -> completeAuthorization with props. Support CIMD/DCR as the lib does by default.
-- `/admin/*` (connect page, session POST, audit, status) gated by admin cookie (login form with ADMIN_PASSWORD), also accept OAuth/bearer with `admin` scope for API use (`POST /admin/session` JSON).
-- `/healthz` public: `{ok, version, secrets:{weworkCredentials:bool, adminPassword:bool, quoteKey:bool, authTokens:n}, session:SessionInfo(no tokens), writeEnabled}`.
+- `/admin/*` (connect page, session POST, API keys, audit, status) gated by the admin cookie only (login form with ADMIN_PASSWORD). The same cookie signs off OAuth approvals, so the operator types the password once per browser.
+- `/healthz` public: `{ok, version, secrets:{weworkCredentials:bool, adminPassword:bool, quoteKey:bool, cookieKey:bool}, session:SessionInfo(no tokens), writeEnabled}`.
 - Connect page: instructions + textarea to paste (a) the Auth0 SPA localStorage cache entry JSON (key prefix `@@auth0spajs@@`), (b) a raw `{access_token, refresh_token?, expires_in|expires_at}` JSON, or (c) just a bearer token. Bookmarklet: reads all localStorage keys starting `@@auth0spajs@@` on members.wework.com and POSTs to `<base>/admin/session` via fetch with credentials (CORS: allow origin https://members.wework.com on that route only, require admin cookie... NOTE cookie is SameSite so cross-site fetch may not carry it; therefore bookmarklet instead copies JSON to clipboard and opens the connect page, where the user pastes. Keep it simple and reliable.). Parse: decode JWT for exp and `https://wework.com/user_uuid`.
 
 ## 9. MCP tools (names exact)

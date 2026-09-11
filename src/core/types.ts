@@ -14,7 +14,7 @@
 
 import type { Config } from "../env";
 
-/** Permission granularity for both OAuth access tokens and static bearer tokens. */
+/** Permission granularity for both OAuth access tokens and API keys. */
 export type Scope = "read" | "write" | "admin";
 
 /**
@@ -22,7 +22,8 @@ export type Scope = "read" | "write" | "admin";
  *
  * - `oauth` — an access token minted by `@cloudflare/workers-oauth-provider`; the
  *   scopes come from the grant's encrypted props.
- * - `bearer` — a static token whose SHA-256 hash is listed in the `AUTH_TOKENS` secret.
+ * - `bearer` — an API key minted at `/admin/keys`, matched by SHA-256 in the
+ *   `WeWorkSession` Durable Object.
  * - `admin` — the signed admin cookie (the `/admin/*` pages).
  */
 export interface Actor {

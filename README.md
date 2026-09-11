@@ -12,7 +12,7 @@
 
 ## How it works
 
-You deploy the Worker to your own Cloudflare account. An agent authenticates to the Worker (OAuth 2.1 or a static bearer token), the Worker asks its Durable Object for a valid WeWork access token, and calls the WeWork API with it. The agent only ever sees desk options, credit costs, and booking ids.
+You deploy the Worker to your own Cloudflare account. An agent authenticates to the Worker (OAuth 2.1, or an API key you mint at `/admin/keys`), the Worker asks its Durable Object for a valid WeWork access token, and calls the WeWork API with it. The agent only ever sees desk options, credit costs, and booking ids.
 
 ```mermaid
 sequenceDiagram
@@ -76,7 +76,6 @@ Set the secrets. Each line prompts for a value:
 npx wrangler secret put ADMIN_PASSWORD      # gates /admin/* and the OAuth approval screen
 npx wrangler secret put QUOTE_SIGNING_KEY   # HMAC key that signs booking quotes
 npx wrangler secret put COOKIE_SIGNING_KEY  # signs the admin session cookie
-npx wrangler secret put AUTH_TOKENS         # optional: JSON array of static scoped tokens
 npx wrangler secret put WEWORK_USERNAME     # optional: for automatic login
 npx wrangler secret put WEWORK_PASSWORD     # optional: for automatic login
 ```
@@ -115,11 +114,11 @@ Full per-client detail, including Claude Desktop and the OpenAI Agents SDK: [doc
 claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp
 ```
 
-or with a static token instead:
+or with an API key instead (mint one at `/admin/keys`):
 
 ```sh
 claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp \
-  --header "Authorization: Bearer <token>"
+  --header "Authorization: Bearer ww_<your-key>"
 ```
 
 **Cursor**, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
@@ -129,7 +128,7 @@ claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp 
   "mcpServers": {
     "weworking": {
       "url": "https://<your-worker>.workers.dev/mcp",
-      "headers": { "Authorization": "Bearer <token>" }
+      "headers": { "Authorization": "Bearer ww_<your-key>" }
     }
   }
 }
@@ -142,28 +141,21 @@ claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp 
 **REST**:
 
 ```sh
-curl -s -H "Authorization: Bearer <token>" \
+curl -s -H "Authorization: Bearer ww_<your-key>" \
   "https://<your-worker>.workers.dev/api/availability?city=London&date=2026-09-21&start_time=09:00&end_time=17:00"
 ```
 
-## Static tokens
+## API keys
 
-`AUTH_TOKENS` is a JSON array of entries. Only the SHA-256 hash of each token is stored, so the secret is not itself a credential:
+An agent authenticates in one of two ways: the OAuth flow above, or an API key sent as a plain bearer header, `Authorization: Bearer ww_...`.
 
-```json
-[
-  { "name": "claude-code", "sha256": "9f86d081...", "scopes": ["read", "write"] },
-  { "name": "dashboard",   "sha256": "5e884898...", "scopes": ["read"] }
-]
-```
+Keys are minted in the browser. Open `https://<your-worker>.workers.dev/admin/keys`, sign in with `ADMIN_PASSWORD`, give the key a name, tick the scopes it needs, and press Create key. The key is displayed once, with the Claude Code, Cursor and curl lines to paste it into. Copy it then: the worker stores only its SHA-256, so nothing can show it to you again.
 
-Generate a token and its entry with:
+Use `read` for anything that should never spend credits. `write` adds booking and cancelling, within the caps. `admin` grants nothing beyond `write` today; the operator pages are reached with the admin password in a browser, not with a key.
 
-```sh
-node scripts/hash-token.mjs --name claude-code --scopes read,write
-```
+To retire a key, press Revoke on the same page. It stops working on the next request, and its name stays in the list so the audit log still reads sensibly.
 
-It prints the token once (copy it then, it is not recoverable) and the JSON entry to merge into `AUTH_TOKENS`. Then `npx wrangler secret put AUTH_TOKENS` with the full array.
+There is one sign-in for the browser (`ADMIN_PASSWORD`) and it covers both the admin pages and the OAuth approval screen.
 
 ## Configuration
 
@@ -174,7 +166,6 @@ Secrets (`npx wrangler secret put <NAME>`, or `.dev.vars` locally, see `.dev.var
 | `ADMIN_PASSWORD` | yes | gates `/admin/*` and the OAuth approval screen |
 | `QUOTE_SIGNING_KEY` | yes | HMAC-SHA-256 key for booking quotes; 32+ random bytes hex |
 | `COOKIE_SIGNING_KEY` | yes | signs the admin session cookie |
-| `AUTH_TOKENS` | no | JSON array of `{name, sha256, scopes}` static bearer tokens |
 | `WEWORK_USERNAME` | no | WeWork login email, for automatic login |
 | `WEWORK_PASSWORD` | no | WeWork password, for automatic login |
 
@@ -211,13 +202,13 @@ src/                Worker source
   core/             domain types, quote signing, booking service, time helpers
   wework/           upstream client, Auth0 login/refresh, mappers
   session/          WeWorkSession Durable Object, token store, cron
-  auth/             OAuth provider wiring, static token guard, admin session
+  auth/             OAuth provider wiring, API key guard, admin session
   mcp/              MCP server and tool definitions
   http/             REST API, OpenAPI, admin pages, healthz
 test/               vitest (workers pool) + scrubbed fixtures
 docs/               self-hosting, clients, API, location and time rules, threat model, capture guide
 plugin/             Agent Plugin (plugin.json, mcp.json, skills/)
-scripts/            hash-token.mjs, record-fixture.mjs
+scripts/            record-fixture.mjs, wrangler.mjs
 ```
 
 ## Development

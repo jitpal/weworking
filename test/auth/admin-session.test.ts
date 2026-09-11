@@ -16,9 +16,9 @@ import {
   safeNextPath,
 } from "../../src/auth/admin-session";
 import { clearFailures } from "../../src/auth/rate-limit";
-import { sha256Hex } from "../../src/auth/tokens";
 import {
   ADMIN_PASSWORD,
+  adminCookie,
   cookieHeader,
   cookiesFrom,
   fakeEnv,
@@ -219,43 +219,40 @@ describe("requireAdmin", () => {
     expect(response.status).toBe(200);
   });
 
-  it("accepts an admin-scoped static bearer token", async () => {
-    const digest = await sha256Hex("ops-token");
-    const env = fakeEnv({
-      AUTH_TOKENS: JSON.stringify([{ name: "ops", sha256: digest, scopes: ["admin"] }]),
-    });
+  it("accepts the cookie however it was minted", async () => {
     const response = await guarded.request(
       "/guarded",
-      { headers: { Authorization: "Bearer ops-token" } },
-      env,
+      { headers: { ...HTML_HEADERS, Cookie: await adminCookie() } },
+      fakeEnv(),
     );
     expect(response.status).toBe(200);
   });
 
-  it("accepts an actor already resolved by upstream middleware", async () => {
+  it("refuses an agent credential: /admin is a browser surface", async () => {
+    // The cookie is the only way in. An API key authenticates /mcp and /api/*, and
+    // an actor another middleware resolved is not a substitute either.
     const withActor = new Hono<{ Bindings: Env_; Variables: { actor?: unknown } }>();
     withActor.use("/guarded", async (c, next) => {
-      c.set("actor", { kind: "oauth", name: "claude.ai", scopes: ["admin"], accountId: "default" });
+      c.set("actor", { kind: "bearer", name: "ops", scopes: ["admin"], accountId: "default" });
       await next();
     });
     withActor.use("/guarded", requireAdmin);
     withActor.get("/guarded", (c) => c.json({ ok: true }));
-    const response = await withActor.request("/guarded", {}, fakeEnv());
-    expect(response.status).toBe(200);
-  });
 
-  it("refuses a token without the admin scope", async () => {
-    const digest = await sha256Hex("reader-token");
-    const env = fakeEnv({
-      AUTH_TOKENS: JSON.stringify([{ name: "reader", sha256: digest, scopes: ["read", "write"] }]),
-    });
-    const response = await guarded.request(
+    const withProps = await withActor.request(
       "/guarded",
-      { headers: { Authorization: "Bearer reader-token" } },
-      env,
+      { headers: { Accept: "application/json" } },
+      fakeEnv(),
     );
-    expect(response.status).toBe(401);
-    expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
+    expect(withProps.status).toBe(401);
+
+    const withHeader = await guarded.request(
+      "/guarded",
+      { headers: { Accept: "application/json", Authorization: "Bearer ww_whatever" } },
+      fakeEnv(),
+    );
+    expect(withHeader.status).toBe(401);
+    expect(withHeader.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
   });
 
   it("redirects an unauthenticated browser to the login form with ?next=", async () => {

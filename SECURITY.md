@@ -16,7 +16,7 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this sof
 
 ## In scope
 
-- Authentication and authorisation bypass: reaching `/mcp`, `/api/*`, or `/admin/*` without a valid OAuth token, static bearer token, or admin cookie.
+- Authentication and authorisation bypass: reaching `/mcp`, `/api/*`, or `/admin/*` without a valid OAuth token, API key, or admin cookie.
 - Scope escalation: a `read` credential performing a write, or a non-`admin` credential reading the audit log or replacing the session.
 - Quote forgery: getting `create_booking` to accept a quote that was not signed by `QUOTE_SIGNING_KEY`, or replaying an expired one.
 - Cap or kill-switch bypass: booking past `MAX_BOOKINGS_PER_DAY` / `MAX_BOOKINGS_PER_WEEK` / `MAX_CREDITS_PER_BOOKING`, or writing while `WRITE_ENABLED="false"`.
@@ -40,9 +40,9 @@ Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this sof
 If you run this, the security of your WeWork account depends on these:
 
 - Secrets live in Cloudflare (`wrangler secret put`) or in local `.dev.vars`, never in the repo. `.dev.vars` is gitignored; `.dev.vars.example` holds placeholders only.
-- `AUTH_TOKENS` stores only SHA-256 hashes, compared in constant time. The plaintext token exists once, in your client's config.
+- API keys are stored as SHA-256 hashes in the `WeWorkSession` Durable Object, never in plaintext. A key is displayed once, when it is minted at `/admin/keys`, and then exists only in your client's config.
 - `QUOTE_SIGNING_KEY` and `COOKIE_SIGNING_KEY` should be 32 random bytes (`openssl rand -hex 32`) and should differ from each other.
 - WeWork access and refresh tokens are stored only in the `WeWorkSession` Durable Object's SQLite storage, inside your Cloudflare account. They are never returned to a client and never logged; all logging passes through `src/redact.ts`.
 - `/healthz` deliberately reports presence booleans and session age only, never values.
-- Rotation: re-run `wrangler secret put` for Worker secrets (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#rotating-tokens)); revoke a WeWork session by signing out on `members.wework.com` and then `POST /admin/session` a fresh one, or clear it from the admin page.
-- Revoking an OAuth client deletes its grant from `OAUTH_KV`; revoking a static token means removing its entry from `AUTH_TOKENS` and redeploying the secret.
+- Rotation: re-run `wrangler secret put` for Worker secrets (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#rotating-credentials)); revoke a WeWork session by signing out on `members.wework.com` and then `POST /admin/session` a fresh one, or clear it from the admin page.
+- Revoking an OAuth client deletes its grant from `OAUTH_KV`; revoking an API key is a button at `/admin/keys` and takes effect on the next request.

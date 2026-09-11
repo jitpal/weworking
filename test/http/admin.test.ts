@@ -1,10 +1,13 @@
 /**
  * The operator pages in `src/http/admin.ts`.
  *
- * The Durable Object is replaced by a plain object (the pages only use four RPC
+ * The Durable Object is replaced by a plain object (the pages use a handful of RPC
  * methods, declared as `AdminSessionStub`), and `parseManualSession` is mocked at
  * the module boundary the admin pages import it through — so this file exercises the
  * page logic, not the WeWork parser or the DO.
+ *
+ * Every request carries the signed admin cookie, because that is the only credential
+ * `requireAdmin` accepts.
  */
 
 import { Hono } from "hono";
@@ -28,9 +31,15 @@ import {
   bookmarkletSource,
   devtoolsSnippet,
 } from "../../src/http/admin";
-import { fakeEnv, HTML_HEADERS } from "../auth/helpers";
-
-const ADMIN_TOKEN = "ops-token";
+import type { ApiKeySummary } from "../../src/session/do";
+import {
+  adminCookie,
+  cookieHeader,
+  cookiesFrom,
+  fakeEnv,
+  HTML_HEADERS,
+  hiddenField,
+} from "../auth/helpers";
 
 const VALID_SESSION: SessionInfo = {
   state: "valid",
@@ -40,12 +49,24 @@ const VALID_SESSION: SessionInfo = {
   hasRefreshToken: true,
 };
 
+const KEY: ApiKeySummary = {
+  id: "key-1",
+  name: "claude-code",
+  scopes: ["read", "write"],
+  createdAt: "2026-09-10T12:00:00.000Z",
+  lastUsedAt: "2026-09-11T08:15:00.000Z",
+};
+
 /** Records what the pages asked the Durable Object to do. */
 function fakeStub(overrides: Partial<AdminSessionStub> = {}) {
   const stub = {
     getSessionInfo: vi.fn(async () => VALID_SESSION),
     setSession: vi.fn(async (_record: Omit<SessionRecord, "obtainedAt">) => {}),
     clearSession: vi.fn(async () => {}),
+    createApiKey: vi.fn(async (_input: unknown) => {}),
+    listApiKeys: vi.fn(async (): Promise<ApiKeySummary[]> => [KEY]),
+    revokeApiKey: vi.fn(async (_id: string) => true),
+    audit: vi.fn(async (_entry: unknown) => {}),
     listAudit: vi.fn(async () => [
       {
         id: 2,
@@ -65,14 +86,11 @@ function fakeStub(overrides: Partial<AdminSessionStub> = {}) {
 }
 
 async function adminEnv(overrides: Partial<Record<string, unknown>> = {}) {
-  const digest = await sha256Hex(ADMIN_TOKEN);
-  return fakeEnv({
-    AUTH_TOKENS: JSON.stringify([{ name: "ops", sha256: digest, scopes: ["admin"] }]),
-    ...overrides,
-  });
+  return fakeEnv(overrides);
 }
 
-const AUTH = { Authorization: `Bearer ${ADMIN_TOKEN}` };
+/** The `Cookie` header a signed-in operator's browser sends. */
+const AUTH = { Cookie: await adminCookie() };
 
 beforeEach(() => {
   parseManualSession.mockReset();
@@ -97,22 +115,18 @@ describe("authentication", () => {
     expect(response.headers.get("WWW-Authenticate")).toContain("resource_metadata=");
   });
 
-  it("lets an admin-scoped bearer token through", async () => {
+  it("lets the signed-in operator through", async () => {
     const app = adminPages({ sessionStub: () => fakeStub() });
     const response = await app.request("/admin/status", { headers: AUTH }, await adminEnv());
     expect(response.status).toBe(200);
   });
 
-  it("refuses a write-scoped token", async () => {
-    const digest = await sha256Hex("writer");
-    const env = await adminEnv({
-      AUTH_TOKENS: JSON.stringify([{ name: "w", sha256: digest, scopes: ["read", "write"] }]),
-    });
+  it("refuses an agent credential, whatever its scopes", async () => {
     const app = adminPages({ sessionStub: () => fakeStub() });
     const response = await app.request(
       "/admin/status",
-      { headers: { Authorization: "Bearer writer", Accept: "application/json" } },
-      env,
+      { headers: { Authorization: "Bearer ww_anything", Accept: "application/json" } },
+      await adminEnv(),
     );
     expect(response.status).toBe(401);
   });
@@ -464,9 +478,8 @@ describe("GET /admin/status", () => {
       adminPassword: true,
       quoteKey: true,
       cookieKey: true,
-      authTokens: 1,
     });
-    expect(JSON.stringify(body)).not.toContain("ops-token");
+    expect(JSON.stringify(body)).not.toContain("password");
   });
 
   it("still answers when the Durable Object call fails", async () => {
@@ -483,6 +496,285 @@ describe("GET /admin/status", () => {
     const body = (await response.json()) as { session: SessionInfo };
     expect(body.session.state).toBe("none");
     expect(body.session.lastError).toContain("No session.");
+  });
+});
+
+describe("/admin/keys", () => {
+  /** Loads the list page and returns the CSRF pair a browser would hold. */
+  async function loadKeys(
+    app: ReturnType<typeof adminPages>,
+    env: Awaited<ReturnType<typeof adminEnv>>,
+  ) {
+    const response = await app.request(
+      "/admin/keys",
+      { headers: { ...AUTH, ...HTML_HEADERS } },
+      env,
+    );
+    const html = await response.text();
+    const jar = { ...cookiesFrom(response) };
+    return { response, html, csrf: hiddenField(html, "csrf"), jar };
+  }
+
+  /** Submits a key form the way a browser would: CSRF cookie plus matching field. */
+  function post(
+    app: ReturnType<typeof adminPages>,
+    env: Awaited<ReturnType<typeof adminEnv>>,
+    path: string,
+    fields: Record<string, string>,
+    scopes: string[],
+    jar: Record<string, string>,
+  ) {
+    const body = new URLSearchParams(fields);
+    for (const scope of scopes) body.append("scope", scope);
+    return app.request(
+      path,
+      {
+        method: "POST",
+        headers: {
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `${cookieHeader(jar)}; ${AUTH.Cookie}`,
+        },
+        body,
+      },
+      env,
+    );
+  }
+
+  it("lists each key with its scopes, timestamps and status", async () => {
+    const stub = fakeStub({
+      listApiKeys: vi.fn(
+        async (): Promise<ApiKeySummary[]> => [
+          KEY,
+          {
+            id: "key-0",
+            name: "retired",
+            scopes: ["read"],
+            createdAt: "2026-09-01T09:00:00.000Z",
+            revokedAt: "2026-09-05T09:00:00.000Z",
+          },
+        ],
+      ),
+    });
+    const app = adminPages({ sessionStub: () => stub });
+    const { response, html } = await loadKeys(app, await adminEnv());
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("claude-code");
+    expect(html).toContain("read, write");
+    expect(html).toContain("2026-09-10T12:00:00.000Z");
+    expect(html).toContain("2026-09-11T08:15:00.000Z");
+    expect(html).toContain("active");
+    expect(html).toContain("revoked 2026-09-05T09:00:00.000Z");
+    expect(html).toContain('action="/admin/keys/key-1/revoke"');
+    // No revoke button for a key that is already revoked.
+    expect(html).not.toContain('action="/admin/keys/key-0/revoke"');
+    expect(html).toContain("Create key");
+    expect(response.headers.getSetCookie().join(";")).toContain("ww_csrf=");
+  });
+
+  it("ticks read by default and offers the other scopes", async () => {
+    const app = adminPages({ sessionStub: () => fakeStub() });
+    const { html } = await loadKeys(app, await adminEnv());
+    expect(html).toContain('<input type="checkbox" name="scope" value="read" checked>');
+    expect(html).toContain('<input type="checkbox" name="scope" value="write">');
+    expect(html).toContain('<input type="checkbox" name="scope" value="admin">');
+  });
+
+  it("says so when there are no keys yet", async () => {
+    const app = adminPages({ sessionStub: () => fakeStub({ listApiKeys: vi.fn(async () => []) }) });
+    const { html } = await loadKeys(app, await adminEnv());
+    expect(html).toContain("No API keys yet");
+  });
+
+  it("escapes a name that came back from the Durable Object", async () => {
+    const app = adminPages({
+      sessionStub: () =>
+        fakeStub({
+          listApiKeys: vi.fn(async () => [{ ...KEY, name: "<script>alert(1)</script>" }]),
+        }),
+    });
+    const { html } = await loadKeys(app, await adminEnv());
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("creates a key, shows it once, and stores only its hash", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { csrf, jar } = await loadKeys(app, env);
+
+    const response = await post(
+      app,
+      env,
+      "/admin/keys",
+      { csrf, name: "laptop" },
+      ["read", "write"],
+      jar,
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(stub.createApiKey).toHaveBeenCalledTimes(1);
+    const stored = vi.mocked(stub.createApiKey).mock.calls[0]?.[0] as {
+      id: string;
+      name: string;
+      sha256: string;
+      scopes: string[];
+    };
+    expect(stored.name).toBe("laptop");
+    expect(stored.scopes).toEqual(["read", "write"]);
+    expect(stored.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    // The plaintext is on this page and nowhere else.
+    const shown = /ww_[A-Za-z0-9_-]{43}/.exec(html)?.[0] ?? "";
+    expect(shown).not.toBe("");
+    expect(await sha256Hex(shown)).toBe(stored.sha256);
+    expect(html).toContain("only time this key is displayed");
+    expect(html).toContain(`Authorization: Bearer ${shown}`);
+    expect(html).toContain(
+      "claude mcp add --transport http weworking https://desk.example.com/mcp",
+    );
+    expect(html).toContain("curl -s -H");
+    expect(html).toContain("mcpServers");
+
+    // …and the list page afterwards knows the name, not the key.
+    const listing = await app.request(
+      "/admin/keys",
+      { headers: { ...AUTH, ...HTML_HEADERS } },
+      env,
+    );
+    const listHtml = await listing.text();
+    expect(listHtml).toContain("claude-code");
+    expect(listHtml).not.toContain(shown);
+    expect(listHtml).not.toContain("ww_");
+  });
+
+  it("audits the creation without the key", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { csrf, jar } = await loadKeys(app, env);
+    const response = await post(app, env, "/admin/keys", { csrf, name: "laptop" }, ["read"], jar);
+    const html = await response.text();
+    const shown = /ww_[A-Za-z0-9_-]{43}/.exec(html)?.[0] ?? "";
+
+    expect(stub.audit).toHaveBeenCalledTimes(1);
+    const entry = vi.mocked(stub.audit).mock.calls[0]?.[0] as {
+      tool: string;
+      args: unknown;
+      outcome: string;
+    };
+    expect(entry.tool).toBe("admin.keys.create");
+    expect(entry.outcome).toBe("ok");
+    expect(JSON.stringify(entry)).not.toContain(shown);
+    expect(JSON.stringify(entry.args)).toContain("laptop");
+  });
+
+  it("rejects a create without a valid CSRF token", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { jar } = await loadKeys(app, env);
+
+    const forged = await post(
+      app,
+      env,
+      "/admin/keys",
+      { csrf: "not-the-token", name: "x" },
+      ["read"],
+      jar,
+    );
+    expect(forged.status).toBe(403);
+    await expect(forged.text()).resolves.toContain("submitted from another site");
+
+    const missing = await post(app, env, "/admin/keys", { name: "x" }, ["read"], {});
+    expect(missing.status).toBe(403);
+    expect(stub.createApiKey).not.toHaveBeenCalled();
+  });
+
+  it("asks again for an empty name, a name that is too long, or no scopes", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+
+    for (const [fields, scopes, expected] of [
+      [{ name: "  " }, ["read"], "1 to 64 characters"],
+      [{ name: "x".repeat(65) }, ["read"], "1 to 64 characters"],
+      [{ name: "fine" }, [], "Tick at least one scope"],
+    ] as Array<[Record<string, string>, string[], string]>) {
+      const { csrf, jar } = await loadKeys(app, env);
+      const response = await post(app, env, "/admin/keys", { csrf, ...fields }, scopes, jar);
+      expect(response.status).toBe(400);
+      await expect(response.text()).resolves.toContain(expected);
+    }
+    expect(stub.createApiKey).not.toHaveBeenCalled();
+  });
+
+  it("revokes a key and says so on the way back", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { csrf, jar } = await loadKeys(app, env);
+
+    const response = await post(app, env, "/admin/keys/key-1/revoke", { csrf }, [], jar);
+    expect(response.status).toBe(303);
+    const location = decodeURIComponent(response.headers.get("Location") ?? "");
+    expect(location.startsWith("/admin/keys?flash=")).toBe(true);
+    expect(location).toContain("revoked");
+    expect(stub.revokeApiKey).toHaveBeenCalledWith("key-1");
+    expect(stub.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: "admin.keys.revoke", outcome: "ok" }),
+    );
+  });
+
+  it("reports an unknown key instead of claiming success", async () => {
+    const stub = fakeStub({ revokeApiKey: vi.fn(async () => false) });
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { csrf, jar } = await loadKeys(app, env);
+
+    const response = await post(app, env, "/admin/keys/gone/revoke", { csrf }, [], jar);
+    expect(response.status).toBe(303);
+    expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain("unknown");
+    expect(stub.audit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a revoke without a valid CSRF token", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+    const { jar } = await loadKeys(app, env);
+
+    const response = await post(app, env, "/admin/keys/key-1/revoke", { csrf: "forged" }, [], jar);
+    expect(response.status).toBe(403);
+    expect(stub.revokeApiKey).not.toHaveBeenCalled();
+  });
+
+  it("is closed to anyone without the admin cookie", async () => {
+    const stub = fakeStub();
+    const app = adminPages({ sessionStub: () => stub });
+    const env = await adminEnv();
+
+    const list = await app.request("/admin/keys", { headers: HTML_HEADERS }, env);
+    expect(list.status).toBe(303);
+    expect(list.headers.get("Location")).toBe("/admin/login?next=%2Fadmin%2Fkeys");
+
+    const create = await app.request(
+      "/admin/keys",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({ name: "x" }),
+      },
+      env,
+    );
+    expect(create.status).toBe(401);
+    expect(stub.createApiKey).not.toHaveBeenCalled();
   });
 });
 
@@ -510,7 +802,7 @@ describe("composition with the other route groups", () => {
     expect(dashboard.status).toBe(303);
     expect(dashboard.headers.get("Location")).toBe("/admin/login?next=%2Fadmin");
 
-    // …and reachable with an admin token.
+    // …and reachable once signed in.
     const authed = await parent.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, env);
     expect(authed.status).toBe(200);
   });

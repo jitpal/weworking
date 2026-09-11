@@ -10,18 +10,21 @@
  * Two deliberate decisions live here:
  *
  * 1. **`resolveExternalToken` is wired.** It is the library's seam for a non-OAuth
- *    credential on a protected route, and using it means a static `AUTH_TOKENS`
- *    bearer reaches `/mcp` and `/api/*` through exactly the same path as an OAuth
- *    token, with `ctx.props` already populated — no second code path inside the API
- *    handler, and the provider's own 401 carries the
- *    `WWW-Authenticate: ... resource_metadata=...` challenge MCP clients need.
- *    `src/auth/guard.ts#resolveActor` still works on a raw header, so middleware
- *    outside the provider (or a test) resolves the same `Actor`.
- * 2. **The approval screen is a password form, not an identity provider.** There is
- *    one user — the operator — so `userId` is always `"admin"` and the only check is
- *    `ADMIN_PASSWORD`, rate-limited, with a CSRF token bound to a signed cookie and
- *    the parsed `AuthRequest` carried through the form *signed*, so it cannot be
- *    swapped for one pointing at someone else's redirect URI.
+ *    credential on a protected route, and using it means an API key reaches `/mcp`
+ *    and `/api/*` through exactly the same path as an OAuth token, with `ctx.props`
+ *    already populated — no second code path inside the API handler, and the
+ *    provider's own 401 carries the `WWW-Authenticate: ... resource_metadata=...`
+ *    challenge MCP clients need. `src/auth/guard.ts#resolveActor` still works on a
+ *    raw header, so middleware outside the provider (or a test) resolves the same
+ *    `Actor`.
+ * 2. **The approval screen is the operator's own sign-in, not an identity provider.**
+ *    There is one user — the operator — so `userId` is always `"admin"`. A browser
+ *    already carrying the `ww_admin` cookie only has to press Approve; one without it
+ *    is asked for `ADMIN_PASSWORD`, rate-limited, and is signed in on success, so the
+ *    password is typed once per browser whichever page asked for it first. Both forms
+ *    carry a CSRF token bound to a signed cookie, and the parsed `AuthRequest` travels
+ *    through the form *signed*, so it cannot be swapped for one pointing at someone
+ *    else's redirect URI.
  */
 
 import OAuthProvider, {
@@ -41,9 +44,17 @@ import {
   page,
 } from "../http/admin-html";
 import { redact } from "../redact";
-import { checkAdminPassword, csrfHeaders, issueCsrfToken, verifyCsrfToken } from "./admin-session";
+import {
+  adminSessionCookie,
+  checkAdminPassword,
+  csrfHeaders,
+  hasAdminCookie,
+  issueCsrfToken,
+  verifyCsrfToken,
+} from "./admin-session";
+import { matchApiKey } from "./guard";
 import { base64UrlDecode, base64UrlEncode, signValue, verifyValue } from "./sign";
-import { DEFAULT_ACCOUNT_ID, matchStaticToken, SCOPES } from "./tokens";
+import { DEFAULT_ACCOUNT_ID, SCOPES } from "./tokens";
 
 /** Prefixes the provider protects with an access token. */
 export const API_ROUTES = ["/mcp", "/api/"] as const;
@@ -115,12 +126,12 @@ export function createOAuthProvider(options: CreateOAuthProviderOptions): OAuthP
       bearer_methods_supported: ["header"],
     },
     /**
-     * Accepts a static `AUTH_TOKENS` bearer on a protected route, so `/mcp` and
-     * `/api/*` see one uniform `ctx.props`. `null` falls through to the provider's
-     * own `invalid_token` 401, which already carries the challenge header.
+     * Accepts an API key on a protected route, so `/mcp` and `/api/*` see one
+     * uniform `ctx.props`. `null` falls through to the provider's own
+     * `invalid_token` 401, which already carries the challenge header.
      */
     resolveExternalToken: async ({ token, env }) => {
-      const actor = await matchStaticToken(env, token);
+      const actor = await matchApiKey(env, token);
       if (!actor) return null;
       return {
         props: {
@@ -215,6 +226,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         checked: requested.length > 0 ? requested : DEFAULT_SCOPES,
         csrf,
         sealed,
+        signedIn: await hasAdminCookie(c.req.raw, c.env),
       }),
       200,
       csrfHeaders(cookie),
@@ -229,6 +241,9 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
 
     const submitted = await readApprovalForm(c.req.raw);
     const key = requireSigningKey(c.env);
+    // A browser that already signed in at /admin/login (or on an earlier approval)
+    // is not asked for the password again; the CSRF token still binds this form.
+    const signedIn = await hasAdminCookie(c.req.raw, c.env);
 
     if (!(await verifyCsrfToken(c.req.raw, c.env, CSRF_PURPOSE, submitted.csrf))) {
       return htmlResponse(
@@ -255,38 +270,41 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
     const clientName = client?.clientName ?? authRequest.clientId;
     const requested = normaliseScopes(authRequest.scope);
 
-    const outcome = await checkAdminPassword(
-      c.req.raw,
-      c.env,
-      OAUTH_APPROVE_BUCKET,
-      submitted.password,
-    );
-    if (!outcome.ok) {
-      if (outcome.reason === "not-configured") {
-        return htmlResponse(adminPasswordMissingPage(), 503);
+    if (!signedIn) {
+      const outcome = await checkAdminPassword(
+        c.req.raw,
+        c.env,
+        OAUTH_APPROVE_BUCKET,
+        submitted.password,
+      );
+      if (!outcome.ok) {
+        if (outcome.reason === "not-configured") {
+          return htmlResponse(adminPasswordMissingPage(), 503);
+        }
+        const { token: csrf, cookie } = await issueCsrfToken(c.env, CSRF_PURPOSE);
+        const sealed = await signValue(
+          key,
+          { ar: base64UrlEncode(JSON.stringify(authRequest)) },
+          AUTH_REQUEST_TTL_SECONDS,
+        );
+        const extra: Record<string, string> =
+          outcome.reason === "rate-limited" ? { "Retry-After": String(outcome.retryAfter) } : {};
+        return htmlResponse(
+          approvePage({
+            clientName,
+            clientUri: client?.clientUri,
+            redirectUri: authRequest.redirectUri,
+            requested,
+            checked: submitted.scopes.length > 0 ? submitted.scopes : DEFAULT_SCOPES,
+            csrf,
+            sealed,
+            error: outcome.message,
+            signedIn: false,
+          }),
+          outcome.status,
+          csrfHeaders(cookie, extra),
+        );
       }
-      const { token: csrf, cookie } = await issueCsrfToken(c.env, CSRF_PURPOSE);
-      const sealed = await signValue(
-        key,
-        { ar: base64UrlEncode(JSON.stringify(authRequest)) },
-        AUTH_REQUEST_TTL_SECONDS,
-      );
-      const extra: Record<string, string> =
-        outcome.reason === "rate-limited" ? { "Retry-After": String(outcome.retryAfter) } : {};
-      return htmlResponse(
-        approvePage({
-          clientName,
-          clientUri: client?.clientUri,
-          redirectUri: authRequest.redirectUri,
-          requested,
-          checked: submitted.scopes.length > 0 ? submitted.scopes : DEFAULT_SCOPES,
-          csrf,
-          sealed,
-          error: outcome.message,
-        }),
-        outcome.status,
-        csrfHeaders(cookie, extra),
-      );
     }
 
     const granted = grantableScopes(requested, submitted.scopes);
@@ -307,6 +325,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
           csrf,
           sealed,
           error: "Tick at least one scope, or cancel in your client.",
+          signedIn,
         }),
         400,
         csrfHeaders(cookie),
@@ -325,7 +344,15 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         accountId: DEFAULT_ACCOUNT_ID,
       },
     });
-    return c.redirect(redirectTo, 302);
+
+    const response = c.redirect(redirectTo, 302);
+    // The password just proved the operator is here, so start the browser session
+    // too: /admin/* and any later approval will not ask again.
+    if (!signedIn) {
+      const cookie = await adminSessionCookie(c.env);
+      if (cookie) response.headers.append("Set-Cookie", cookie);
+    }
+    return response;
   });
 
   return app;
@@ -470,7 +497,7 @@ function missingSecretsPage(env: Env): { html: string; status: number } | null {
 const SCOPE_DESCRIPTIONS: Record<Scope, string> = {
   read: "search desks, list locations and bookings",
   write: "book and cancel desks (spends your credits, within the configured caps)",
-  admin: "read the audit log and replace the stored WeWork session",
+  admin: "nothing beyond write today; the operator pages need the admin password",
 };
 
 function approvePage(options: {
@@ -482,6 +509,8 @@ function approvePage(options: {
   csrf: string;
   sealed: string;
   error?: string;
+  /** True when the browser already holds the admin session cookie. */
+  signedIn: boolean;
 }): string {
   let redirectHost = options.redirectUri;
   try {
@@ -519,11 +548,16 @@ ${keyValueRow(
 <input type="hidden" name="auth_request" value="${escapeHtml(options.sealed)}">
 <label>Grant these scopes</label>
 <div class="scopes">${checkboxes}</div>
-<label for="password">Admin password</label>
-<input id="password" name="password" type="password" autocomplete="current-password" required>
+${
+  options.signedIn
+    ? `<p class="small muted">Signed in as the operator of this deployment.</p>`
+    : `<label for="password">Admin password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required>`
+}
 <button type="submit">Approve</button>
 </form>
-<p class="small muted">Only approve a client you started yourself. If you did not open this page from your own MCP client, close it.</p>`,
+<p class="small muted">Only approve a client you started yourself. If you did not open this page from your own MCP client, close it.</p>
+<p class="small muted">The <code>admin</code> scope grants nothing beyond <code>write</code> today: the operator pages are reached with the admin password in a browser, not with an agent credential.</p>`,
   });
 }
 

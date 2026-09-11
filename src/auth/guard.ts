@@ -7,7 +7,9 @@
  *  - an **OAuth access token**, validated by `@cloudflare/workers-oauth-provider`
  *    before our handler runs. The provider hands us the grant's decrypted props on
  *    `ctx.props`; we only check their shape.
- *  - a **static bearer token**, matched against `AUTH_TOKENS` by SHA-256 here.
+ *  - an **API key** (`Authorization: Bearer ww_...`), minted by the operator at
+ *    `/admin/keys` and matched here by SHA-256 against the keys stored in the
+ *    `WeWorkSession` Durable Object.
  *
  * The provider validates tokens but does **not** enforce scopes, so every route
  * must call {@link requireScope} itself.
@@ -21,7 +23,9 @@ import type { MiddlewareHandler } from "hono";
 import type { Actor, Scope } from "../core/types";
 import type { Env } from "../env";
 import { AppError, type ErrorBody } from "../errors";
-import { DEFAULT_ACCOUNT_ID, matchStaticToken } from "./tokens";
+import { redact } from "../redact";
+import { getSessionStub } from "../session/do";
+import { DEFAULT_ACCOUNT_ID, looksLikeApiKey, sha256Hex } from "./tokens";
 
 /** Hono context key under which `src/index.ts` stores the resolved actor. */
 export const ACTOR_CONTEXT_KEY = "actor";
@@ -39,9 +43,9 @@ export interface OAuthActorProps {
   accountId?: string;
   /**
    * How the credential was presented. The provider's `resolveExternalToken` seam
-   * (see `src/auth/oauth.ts`) validates a *static* `AUTH_TOKENS` token and hands us
-   * props too, so this field keeps the audit log honest about which kind it was.
-   * Absent means a real OAuth grant.
+   * (see `src/auth/oauth.ts`) validates an API key and hands us props too, so this
+   * field keeps the audit log honest about which kind it was. Absent means a real
+   * OAuth grant.
    */
   kind?: "oauth" | "bearer";
 }
@@ -70,10 +74,49 @@ export function isOAuthActorProps(value: unknown): value is OAuthActorProps {
 }
 
 /**
+ * Resolves a presented bearer credential against the API keys in the Durable Object.
+ *
+ * The `ww_` prefix gate is deliberate: every minted key carries it, so anything else
+ * cannot be one and must not cost a Durable Object round trip. Junk credentials and
+ * OAuth tokens that reached here by mistake are rejected on a string comparison.
+ *
+ * A Durable Object failure is treated as "no match" — a broken session store must
+ * produce a 401 with the OAuth challenge, never a 500 that tells an MCP client the
+ * server is down when the real answer is "authenticate".
+ *
+ * @returns an `Actor` of kind `"bearer"`, or `null` when nothing active matches.
+ */
+export async function matchApiKey(env: Env, presentedToken: string): Promise<Actor | null> {
+  const token = presentedToken.trim();
+  if (!looksLikeApiKey(token)) return null;
+  try {
+    const digest = await sha256Hex(token);
+    const match = await getSessionStub(env, DEFAULT_ACCOUNT_ID).matchApiKey(digest);
+    if (!match) return null;
+    return {
+      kind: "bearer",
+      name: match.name,
+      scopes: [...match.scopes],
+      accountId: DEFAULT_ACCOUNT_ID,
+    };
+  } catch (error) {
+    // Never the key, never the digest: only why the lookup could not be made.
+    console.warn(
+      "auth: API key lookup failed",
+      redact({ message: error instanceof Error ? error.message : "unknown error" }),
+    );
+    return null;
+  }
+}
+
+/**
  * Resolves the caller of a protected request.
  *
+ * Order: valid OAuth props, then an API key from the `Authorization` header, then
+ * nothing.
+ *
  * @param request the incoming request (only the `Authorization` header is read).
- * @param env the worker environment, for `AUTH_TOKENS`.
+ * @param env the worker environment, for the session Durable Object binding.
  * @param oauthProps `ctx.props` from the OAuth provider, when the request arrived
  * through it. Anything that is not shaped like {@link OAuthActorProps} is ignored
  * and the `Authorization` header is tried instead, so this function behaves the
@@ -97,7 +140,7 @@ export async function resolveActor(
 
   const token = bearerToken(request);
   if (!token) return null;
-  return matchStaticToken(env, token);
+  return matchApiKey(env, token);
 }
 
 /** True when `actor` holds `scope`. `admin` is a superset of everything. */
@@ -138,7 +181,7 @@ export function unauthorizedResponse(baseUrl: string): Response {
     error: {
       code: "UNAUTHORIZED",
       message: "No valid credential was presented.",
-      hint: "Send 'Authorization: Bearer <token>' with a token from AUTH_TOKENS, or complete the OAuth flow advertised by the WWW-Authenticate header.",
+      hint: "Send 'Authorization: Bearer <key>' with an API key the operator minted at /admin/keys, or complete the OAuth flow advertised by the WWW-Authenticate header.",
     },
   };
   return new Response(JSON.stringify(body), {

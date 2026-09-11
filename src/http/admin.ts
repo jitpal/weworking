@@ -1,12 +1,16 @@
 /**
- * The operator's pages: status, connect, audit.
+ * The operator's pages: status, connect, API keys, audit.
  *
- * Everything here is behind {@link requireAdmin} (the `ww_admin` cookie, or an
- * `admin`-scoped token for scripted use). Three of these pages exist because the
- * interesting failure mode of this project is *not* code — it is "Auth0 refused an
- * automated login", which only a human with a browser can fix. `/admin/connect` is
- * that fix: a bookmarklet copies the Auth0 SPA cache out of `members.wework.com`,
- * the operator pastes it here, and the token lands in the Durable Object.
+ * Everything here is behind {@link requireAdmin}, which accepts only the `ww_admin`
+ * cookie: these are operator pages, driven from a browser. `/admin/connect` exists
+ * because the interesting failure mode of this project is *not* code — it is "Auth0
+ * refused an automated login", which only a human with a browser can fix. A
+ * bookmarklet copies the Auth0 SPA cache out of `members.wework.com`, the operator
+ * pastes it here, and the token lands in the Durable Object.
+ *
+ * `/admin/keys` is the other half: it mints the API keys agents authenticate with.
+ * A key's plaintext is shown on exactly one page render and never stored, so the
+ * Durable Object holds nothing but its SHA-256.
  *
  * The bookmarklet copies to the clipboard rather than POSTing here directly: the
  * admin cookie is `SameSite=Lax`, so a cross-site `fetch` from
@@ -21,11 +25,20 @@ import { Hono } from "hono";
 // Re-exports `parseManualSession` from src/wework/auth (§11.1); the indirection is
 // the seam the admin tests mock.
 import { parseManualSession } from "../auth/_manual-shim";
-import { type AdminEnv, readFormish, requireAdmin } from "../auth/admin-session";
+import {
+  type AdminEnv,
+  csrfHeaders,
+  issueCsrfToken,
+  readFormish,
+  requireAdmin,
+  verifyCsrfToken,
+} from "../auth/admin-session";
 import { baseUrlFrom } from "../auth/guard";
-import type { SessionInfo, SessionRecord } from "../core/types";
+import { generateApiKey, SCOPES } from "../auth/tokens";
+import type { Scope, SessionInfo, SessionRecord } from "../core/types";
 import { type Config, type Env, parseConfig } from "../env";
 import { isAppError, toErrorBody } from "../errors";
+import type { ApiKeySummary } from "../session/do";
 import { getSessionStub } from "../session/do";
 import { banner, escapeHtml, htmlResponse, keyValues, page } from "./admin-html";
 
@@ -55,6 +68,15 @@ export interface AdminSessionStub {
   setSession(record: Omit<SessionRecord, "obtainedAt">): Promise<void>;
   clearSession(): Promise<void>;
   listAudit(opts?: { limit?: number }): Promise<AuditRow[]>;
+  createApiKey(input: { id: string; name: string; sha256: string; scopes: Scope[] }): Promise<void>;
+  listApiKeys(): Promise<ApiKeySummary[]>;
+  revokeApiKey(id: string): Promise<boolean>;
+  audit(entry: {
+    actor: string;
+    tool: string;
+    args: unknown;
+    outcome: "ok" | "error" | "denied";
+  }): Promise<void>;
 }
 
 /** Injectable dependencies — production defaults are the real DO stub and parser. */
@@ -67,10 +89,14 @@ export interface AdminPagesDeps {
 
 const MAX_PASTE_BYTES = 64 * 1024;
 const DEFAULT_AUDIT_LIMIT = 50;
+/** Purpose string binding a CSRF token to the two API key forms. */
+const KEYS_CSRF_PURPOSE = "admin-keys";
+/** Longest an API key name may be; mirrors the Durable Object's own check. */
+const KEY_NAME_MAX = 64;
 
 /**
  * `/admin`, `/admin/connect`, `/admin/session`, `/admin/session/clear`,
- * `/admin/audit`, `/admin/status`.
+ * `/admin/keys`, `/admin/keys/:id/revoke`, `/admin/audit`, `/admin/status`.
  *
  * Mount at the root (paths are absolute): `app.route("/", adminPages())`.
  */
@@ -169,6 +195,82 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
     );
   });
 
+  /* ----------------------------------------------------------- api keys */
+
+  app.get("/admin/keys", requireAdmin, async (c) => {
+    const keys = await stubFor(c.env).listApiKeys();
+    const { token: csrf, cookie } = await issueCsrfToken(c.env, KEYS_CSRF_PURPOSE);
+    return htmlResponse(
+      keysPage({
+        keys,
+        csrf,
+        baseUrl: baseUrlFrom(c.req.raw, c.env),
+        flash: c.req.query("flash") ?? undefined,
+        error: c.req.query("error") ?? undefined,
+      }),
+      200,
+      csrfHeaders(cookie),
+    );
+  });
+
+  app.post("/admin/keys", requireAdmin, async (c) => {
+    const submitted = await readKeyForm(c.req.raw);
+    if (!(await verifyCsrfToken(c.req.raw, c.env, KEYS_CSRF_PURPOSE, submitted.csrf))) {
+      return keysErrorPage(
+        c,
+        stubFor,
+        "That form expired or was submitted from another site. Try again.",
+        403,
+      );
+    }
+
+    const name = submitted.name.trim();
+    if (name.length < 1 || name.length > KEY_NAME_MAX) {
+      return keysErrorPage(c, stubFor, `Give the key a name of 1 to ${KEY_NAME_MAX} characters.`);
+    }
+    if (submitted.scopes.length === 0) {
+      return keysErrorPage(c, stubFor, "Tick at least one scope.");
+    }
+
+    const { token, sha256 } = await generateApiKey();
+    const id = crypto.randomUUID();
+    const stub = stubFor(c.env);
+    await stub.createApiKey({ id, name, sha256, scopes: submitted.scopes });
+    // The key itself is never audited, only that one was minted and with what scopes.
+    await auditKeyChange(stub, "admin.keys.create", { id, name, scopes: submitted.scopes });
+
+    return htmlResponse(
+      keyCreatedPage({
+        name,
+        scopes: submitted.scopes,
+        token,
+        baseUrl: baseUrlFrom(c.req.raw, c.env),
+      }),
+    );
+  });
+
+  app.post("/admin/keys/:id/revoke", requireAdmin, async (c) => {
+    const submitted = await readKeyForm(c.req.raw);
+    if (!(await verifyCsrfToken(c.req.raw, c.env, KEYS_CSRF_PURPOSE, submitted.csrf))) {
+      return keysErrorPage(
+        c,
+        stubFor,
+        "That form expired or was submitted from another site. Try again.",
+        403,
+      );
+    }
+
+    const id = c.req.param("id");
+    const stub = stubFor(c.env);
+    const revoked = await stub.revokeApiKey(id);
+    if (revoked) await auditKeyChange(stub, "admin.keys.revoke", { id });
+
+    const query = revoked
+      ? `flash=${encodeURIComponent("API key revoked. It stops working on the next request.")}`
+      : `error=${encodeURIComponent("That key is unknown or was already revoked.")}`;
+    return c.redirect(`/admin/keys?${query}`, 303);
+  });
+
   /* ---------------------------------------------------------------- audit */
 
   app.get("/admin/audit", requireAdmin, async (c) => {
@@ -222,7 +324,6 @@ interface AdminStatus {
     adminPassword: boolean;
     quoteKey: boolean;
     cookieKey: boolean;
-    authTokens: number;
   };
   configError?: string;
 }
@@ -272,7 +373,6 @@ async function collectStatus(
       adminPassword: Boolean(env.ADMIN_PASSWORD?.trim()),
       quoteKey: Boolean(env.QUOTE_SIGNING_KEY?.trim()),
       cookieKey: Boolean(env.COOKIE_SIGNING_KEY?.trim()),
-      authTokens: config?.authTokens.length ?? 0,
     },
   };
   if (configError !== undefined) status.configError = configError;
@@ -312,6 +412,84 @@ function respondSessionError(
     `/admin/connect?error=${encodeURIComponent(problem.message)}&hint=${encodeURIComponent(problem.hint)}`,
     303,
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* API key forms                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** What the two key forms submit. Browser form posts only; there is no JSON API here. */
+interface KeyForm {
+  name: string;
+  scopes: Scope[];
+  csrf?: string;
+}
+
+/**
+ * Reads a key form.
+ *
+ * `readFormish()` is not reused because `scopes` is a repeated field: a form post
+ * carries one `scope` value per ticked checkbox, which collapsing to a
+ * `Record<string, string>` would lose.
+ */
+async function readKeyForm(request: Request): Promise<KeyForm> {
+  try {
+    const form = await request.formData();
+    const scopes = form
+      .getAll("scope")
+      .filter((value): value is string => typeof value === "string");
+    const csrf = form.get("csrf");
+    const name = form.get("name");
+    return {
+      name: typeof name === "string" ? name : "",
+      scopes: normaliseScopes(scopes),
+      csrf: typeof csrf === "string" ? csrf : undefined,
+    };
+  } catch {
+    return { name: "", scopes: [] };
+  }
+}
+
+/** Keeps only scopes this deployment knows, de-duplicated and in canonical order. */
+function normaliseScopes(values: readonly string[]): Scope[] {
+  return SCOPES.filter((scope) => values.includes(scope));
+}
+
+/** Re-renders the key list with an error banner and a fresh CSRF token. */
+async function keysErrorPage(
+  c: {
+    env: Env;
+    req: { raw: Request };
+  },
+  stubFor: (env: Env) => AdminSessionStub,
+  message: string,
+  status = 400,
+): Promise<Response> {
+  const keys = await stubFor(c.env).listApiKeys();
+  const { token: csrf, cookie } = await issueCsrfToken(c.env, KEYS_CSRF_PURPOSE);
+  return htmlResponse(
+    keysPage({ keys, csrf, baseUrl: baseUrlFrom(c.req.raw, c.env), error: message }),
+    status,
+    csrfHeaders(cookie),
+  );
+}
+
+/** Records a key change in the audit log. Never receives the key itself. */
+async function auditKeyChange(
+  stub: AdminSessionStub,
+  tool: "admin.keys.create" | "admin.keys.revoke",
+  args: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await stub.audit({ actor: "admin:cookie", tool, args, outcome: "ok" });
+  } catch (error) {
+    // An audit failure must not lose the operator their key, or leave a revoked key
+    // looking un-revoked. Report it and carry on.
+    console.warn("admin: could not write the audit entry", {
+      tool,
+      message: error instanceof Error ? error.message : "unknown error",
+    });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -367,6 +545,7 @@ open("${connectUrl}");             // then paste it here`;
 const NAV: Array<[string, string]> = [
   ["/admin", "Status"],
   ["/admin/connect", "Connect WeWork"],
+  ["/admin/keys", "API keys"],
   ["/admin/audit", "Audit log"],
   ["/healthz", "Health"],
   ["/admin/logout", "Sign out"],
@@ -439,7 +618,6 @@ ${keyValues([
   ["ADMIN_PASSWORD", status.secrets.adminPassword ? "yes" : "no"],
   ["QUOTE_SIGNING_KEY", status.secrets.quoteKey ? "yes" : "no"],
   ["COOKIE_SIGNING_KEY", status.secrets.cookieKey ? "yes" : "no"],
-  ["Static tokens (AUTH_TOKENS)", status.secrets.authTokens],
 ])}
 <p class="small muted">Presence only — no secret value is ever shown here.</p>
 </div>
@@ -447,6 +625,7 @@ ${keyValues([
 <h2>Links</h2>
 <ul class="small">
 <li><a href="/admin/connect">Connect a WeWork session</a></li>
+<li><a href="/admin/keys">API keys</a> — mint a key for an agent, or revoke one</li>
 <li><a href="/admin/audit">Audit log</a> (<a href="/admin/audit?format=json">JSON</a>)</li>
 <li><a href="/admin/status">This page as JSON</a></li>
 <li><a href="/healthz">/healthz</a> · <a href="/api/openapi.json">/api/openapi.json</a></li>
@@ -515,6 +694,127 @@ logging in.</p>
 <h2>DevTools snippet (same thing, no bookmarklet)</h2>
 <pre>${escapeHtml(devtoolsSnippet(options.baseUrl))}</pre>
 </div>`,
+  });
+}
+
+function keysPage(options: {
+  keys: ApiKeySummary[];
+  csrf: string;
+  baseUrl: string;
+  flash?: string;
+  error?: string;
+}): string {
+  const rows = options.keys
+    .map((key) => {
+      const revoked = key.revokedAt !== undefined;
+      const action = revoked
+        ? `<span class="muted">—</span>`
+        : `<form method="post" action="/admin/keys/${encodeURIComponent(key.id)}/revoke">
+<input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
+<button type="submit">Revoke</button>
+</form>`;
+      return `<tr>
+<td>${escapeHtml(key.name)}</td>
+<td><code>${escapeHtml(key.scopes.join(", "))}</code></td>
+<td>${escapeHtml(key.createdAt)}</td>
+<td>${escapeHtml(key.lastUsedAt ?? "never")}</td>
+<td>${escapeHtml(revoked ? `revoked ${key.revokedAt}` : "active")}</td>
+<td>${action}</td>
+</tr>`;
+    })
+    .join("");
+
+  const table =
+    options.keys.length === 0
+      ? `<p class="muted">No API keys yet. Create one below.</p>`
+      : `<div class="card"><table>
+<thead><tr><th>Name</th><th>Scopes</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+<tbody>${rows}</tbody></table></div>`;
+
+  const checkboxes = SCOPES.map(
+    (scope) =>
+      `<label><input type="checkbox" name="scope" value="${escapeHtml(scope)}"${
+        scope === "read" ? " checked" : ""
+      }> <span><code>${escapeHtml(scope)}</code> — ${escapeHtml(KEY_SCOPE_DESCRIPTIONS[scope])}</span></label>`,
+  ).join("");
+
+  return page({
+    title: "API keys",
+    heading: "API keys",
+    subtitle: "Credentials for agents and scripts. Only their SHA-256 is stored.",
+    nav: NAV,
+    body: `
+${options.flash ? banner("ok", options.flash) : ""}
+${options.error ? banner("err", options.error) : ""}
+${table}
+<form class="card" method="post" action="/admin/keys">
+<h2>Create a key</h2>
+<input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
+<label for="name">Name</label>
+<input id="name" name="name" type="text" maxlength="${KEY_NAME_MAX}" required spellcheck="false"
+ autocomplete="off" placeholder="claude-code">
+<label>Scopes</label>
+<div class="scopes">${checkboxes}</div>
+<button type="submit">Create key</button>
+</form>
+<p class="small muted">The key is shown once, on the next page. It cannot be recovered afterwards;
+mint a new one and revoke the old one if you lose it. Revoking takes effect on the next request.</p>`,
+  });
+}
+
+/** What each scope buys, in the operator's terms. */
+const KEY_SCOPE_DESCRIPTIONS: Record<Scope, string> = {
+  read: "search desks, list locations and bookings",
+  write: "book and cancel desks, within the configured caps",
+  admin: "nothing beyond write today; these pages need the admin password",
+};
+
+function keyCreatedPage(options: {
+  name: string;
+  scopes: Scope[];
+  token: string;
+  baseUrl: string;
+}): string {
+  const mcpUrl = `${options.baseUrl.replace(/\/+$/, "")}/mcp`;
+  const apiUrl = `${options.baseUrl.replace(/\/+$/, "")}/api/whoami`;
+  const claudeCode = `claude mcp add --transport http weworking ${mcpUrl} \\
+  --header "Authorization: Bearer ${options.token}"`;
+  const cursor = `{
+  "mcpServers": {
+    "weworking": {
+      "url": "${mcpUrl}",
+      "headers": { "Authorization": "Bearer ${options.token}" }
+    }
+  }
+}`;
+  const curl = `curl -s -H "Authorization: Bearer ${options.token}" ${apiUrl}`;
+
+  return page({
+    title: "API key created",
+    heading: "Copy this key now",
+    subtitle: "It is shown on this page only. Nothing here can show it to you again.",
+    nav: NAV,
+    body: `
+${banner("warn", "This is the only time this key is displayed. Copy it before you leave the page.")}
+<div class="card">
+${keyValues([
+  ["Name", options.name],
+  ["Scopes", options.scopes.join(", ")],
+])}
+<label for="key">The key</label>
+<pre id="key">${escapeHtml(options.token)}</pre>
+</div>
+<div class="card">
+<h2>Claude Code</h2>
+<pre>${escapeHtml(claudeCode)}</pre>
+<h2>Cursor (<code>~/.cursor/mcp.json</code>)</h2>
+<pre>${escapeHtml(cursor)}</pre>
+<h2>curl</h2>
+<pre>${escapeHtml(curl)}</pre>
+<p class="small muted">The header is a plain bearer credential: <code>Authorization: Bearer &lt;key&gt;</code>.
+No other header is needed.</p>
+</div>
+<p class="small"><a href="/admin/keys">Back to the key list</a></p>`,
   });
 }
 

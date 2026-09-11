@@ -7,30 +7,26 @@
  * HMAC-signed cookie (`ww_admin`, 12 hours, `HttpOnly; Secure; SameSite=Lax`) —
  * no server-side session store, so nothing to expire or clean up.
  *
- * `SameSite=Lax` is doing real work: it means a cross-site `POST` never carries the
- * cookie, which is what protects `POST /admin/session` and `POST /admin/session/clear`
- * from CSRF without a token. The two *password* forms (this one and the OAuth
- * approval screen) do carry an explicit CSRF token, because they are reachable
- * before any cookie exists.
+ * This one sign-in serves both halves of the browser surface: the `/admin/*` pages
+ * and the OAuth approval screen. Approving a client with the password also starts
+ * the session, so the operator types the password once per browser.
  *
- * An `admin`-scoped credential (static bearer or OAuth) is accepted in place of the
- * cookie, so `POST /admin/session` can be driven by a script — the "residential
- * relay" pattern in docs/SELF_HOSTING.md.
+ * `SameSite=Lax` is doing real work: it means a cross-site `POST` never carries the
+ * cookie. Every `POST` under `/admin` additionally carries an explicit CSRF token
+ * bound to a signed cookie, so a form submission is only accepted from a browser
+ * that actually loaded that form.
+ *
+ * The cookie is the *only* way past {@link requireAdmin}. An agent credential, of
+ * either kind, authenticates `/mcp` and `/api/*` and nothing else.
  */
 
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { deleteCookie, setCookie } from "hono/cookie";
+import { deleteCookie } from "hono/cookie";
 import type { Actor } from "../core/types";
 import type { Env } from "../env";
 import { banner, escapeHtml, htmlResponse, page } from "../http/admin-html";
-import {
-  ACTOR_CONTEXT_KEY,
-  baseUrlFrom,
-  hasScope,
-  resolveActor,
-  unauthorizedResponse,
-} from "./guard";
+import { baseUrlFrom, unauthorizedResponse } from "./guard";
 import {
   clearFailures,
   clientIp,
@@ -70,6 +66,28 @@ export function cookieFromRequest(request: Request, name: string): string | unde
     return decodeURIComponent(part.slice(index + 1).trim());
   }
   return undefined;
+}
+
+/**
+ * Mints the signed `ww_admin` cookie as a ready-to-send `Set-Cookie` value.
+ *
+ * Shared by the login form and the OAuth approval screen, so both sign the operator
+ * in the same way and one browser sign-in covers both.
+ *
+ * @returns the header value, or `null` when `COOKIE_SIGNING_KEY` is not configured.
+ */
+export async function adminSessionCookie(env: Env): Promise<string | null> {
+  const key = env.COOKIE_SIGNING_KEY?.trim();
+  if (!key) return null;
+  const value = await signValue(key, { sub: "admin" }, ADMIN_SESSION_TTL_SECONDS);
+  return [
+    `${ADMIN_COOKIE}=${encodeURIComponent(value)}`,
+    "Path=/",
+    "HttpOnly",
+    "Secure",
+    "SameSite=Lax",
+    `Max-Age=${ADMIN_SESSION_TTL_SECONDS}`,
+  ].join("; ");
 }
 
 /** True when the request carries a valid, unexpired `ww_admin` cookie. */
@@ -244,8 +262,8 @@ export function adminRoutes(): Hono<AdminEnv> {
       );
     }
 
-    const key = c.env.COOKIE_SIGNING_KEY?.trim();
-    if (!key) {
+    const cookie = await adminSessionCookie(c.env);
+    if (!cookie) {
       return htmlResponse(
         page({
           title: "Not configured",
@@ -255,14 +273,7 @@ export function adminRoutes(): Hono<AdminEnv> {
       );
     }
 
-    const value = await signValue(key, { sub: "admin" }, ADMIN_SESSION_TTL_SECONDS);
-    setCookie(c, ADMIN_COOKIE, value, {
-      path: "/",
-      httpOnly: true,
-      secure: true,
-      sameSite: "Lax",
-      maxAge: ADMIN_SESSION_TTL_SECONDS,
-    });
+    c.header("Set-Cookie", cookie, { append: true });
     deleteCookie(c, CSRF_COOKIE, { path: "/" });
     return c.redirect(next, 303);
   });
@@ -278,9 +289,9 @@ export function adminRoutes(): Hono<AdminEnv> {
 /**
  * Gate for every page in `src/http/admin.ts`.
  *
- * Accepts either the `ww_admin` cookie or an `admin`-scoped `Actor` — from
- * `c.get("actor")` when `src/index.ts` middleware already resolved one, otherwise
- * resolved here from the raw `Authorization` header.
+ * The `ww_admin` cookie is the only credential it accepts: `/admin/*` is an
+ * operator surface driven from a browser, and an agent credential is deliberately
+ * not a way in.
  *
  * Unauthenticated HTML navigation is redirected to the login form (with `?next=`);
  * anything else gets the JSON 401 with the OAuth challenge, so a script or an MCP
@@ -288,14 +299,6 @@ export function adminRoutes(): Hono<AdminEnv> {
  */
 export const requireAdmin: MiddlewareHandler<AdminEnv> = async (c, next) => {
   if (await hasAdminCookie(c.req.raw, c.env)) {
-    await next();
-    return;
-  }
-
-  const existing = c.get(ACTOR_CONTEXT_KEY);
-  const actor = existing ?? (await resolveActor(c.req.raw, c.env));
-  if (actor && hasScope(actor, "admin")) {
-    if (!existing) c.set(ACTOR_CONTEXT_KEY, actor);
     await next();
     return;
   }
@@ -360,7 +363,7 @@ ${options.error ? banner("err", options.error) : ""}
 <input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button>
 </form>
-<p class="small muted">The session cookie lasts 12 hours. Scripts can use an <code>admin</code>-scoped bearer token instead of signing in.</p>`,
+<p class="small muted">The session cookie lasts 12 hours. It is the same sign-in the OAuth approval screen uses.</p>`,
   });
 }
 

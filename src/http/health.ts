@@ -3,10 +3,10 @@
  *
  * Two rules shape this file:
  *
- * 1. **It contains no secrets.** Only *presence* booleans (`quoteKey: true`), a count of
- *    static tokens, and the session's state — never a token, a password, an expiry-less
- *    credential, or a configuration value. It is unauthenticated, so treat everything it
- *    returns as published.
+ * 1. **It contains no secrets.** Only *presence* booleans (`quoteKey: true`) and the
+ *    session's state — never a token, a password, an expiry-less credential, or a
+ *    configuration value. It is unauthenticated, so treat everything it returns as
+ *    published.
  * 2. **It answers even when the deployment is broken.** A missing `QUOTE_SIGNING_KEY`
  *    makes `parseConfig` throw, and that is precisely when an operator needs this route
  *    most — so a configuration failure is reported as `ok: false` with the message,
@@ -33,8 +33,6 @@ export interface HealthBody {
     adminPassword: boolean;
     quoteKey: boolean;
     cookieKey: boolean;
-    /** How many static bearer tokens are configured. */
-    authTokens: number;
   };
   /** The stored WeWork session's health. Contains no token. */
   session: SessionInfo;
@@ -122,21 +120,9 @@ function presenceFromEnv(env: Env): HealthBody["secrets"] {
     adminPassword: nonEmpty(env.ADMIN_PASSWORD),
     quoteKey: nonEmpty(env.QUOTE_SIGNING_KEY),
     cookieKey: nonEmpty(env.COOKIE_SIGNING_KEY),
-    authTokens: countTokens(env.AUTH_TOKENS),
   };
 }
 
 function nonEmpty(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-/** Counts `AUTH_TOKENS` entries without validating them — `0` when unparseable. */
-function countTokens(raw: string | undefined): number {
-  if (!nonEmpty(raw)) return 0;
-  try {
-    const parsed: unknown = JSON.parse(raw as string);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
 }

@@ -9,8 +9,8 @@
  *
  *   1. `OAuthProvider` (workers-oauth-provider) wraps the app. It serves the OAuth
  *      token/registration/metadata endpoints itself, validates bearer tokens on
- *      `/mcp` and `/api/*` (OAuth grants and, via `resolveExternalToken`, static
- *      tokens from `AUTH_TOKENS`), and puts the grant's props on `ctx.props`.
+ *      `/mcp` and `/api/*` (OAuth grants and, via `resolveExternalToken`, the API
+ *      keys minted at `/admin/keys`), and puts the grant's props on `ctx.props`.
  *   2. Everything else lands in the Hono app: landing page, `/healthz`, the OAuth
  *      approval form, `/admin/*`, `/api/openapi.json`.
  *   3. `/mcp` and `/api/*` resolve an `Actor` from `ctx.props` or the raw header,
@@ -66,7 +66,7 @@ app.route("/", healthRoutes({ getSessionInfo: (env) => getSessionStub(env).getSe
 app.route("/api", openapiRoutes());
 app.route("/", landingRoutes());
 
-/* OAuth approval form and admin pages (admin cookie or admin-scoped token) */
+/* OAuth approval form and admin pages (the admin cookie, from ADMIN_PASSWORD) */
 app.route("/", oauthRoutes());
 app.route("/", adminRoutes());
 app.route("/", adminPages());

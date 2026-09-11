@@ -44,14 +44,14 @@ h2 { font-size: 1.05rem; margin: 1.8rem 0 .5rem; }
 h3 { font-size: .95rem; margin: 1.2rem 0 .4rem; }
 p, li { margin: .5rem 0; }
 a { color: var(--accent); }
-code, pre, textarea, input[type=password] { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code, pre, textarea, input[type=password], input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 code { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: .05rem .3rem; font-size: .85em; }
 pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .7rem .8rem; overflow-x: auto; font-size: .8rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; margin: 1rem 0; }
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
 label { display: block; font-weight: 600; margin: .9rem 0 .3rem; }
-input[type=password], textarea { width: 100%; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: .9rem; }
+input[type=password], input[type=text], textarea { width: 100%; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: .9rem; }
 textarea { min-height: 9rem; }
 button { margin-top: 1rem; padding: .55rem 1.1rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
 .scopes { display: flex; flex-wrap: wrap; gap: .9rem; margin: .4rem 0; }

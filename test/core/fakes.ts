@@ -71,7 +71,6 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     quoteSigningKey: TEST_QUOTE_KEY,
     cookieSigningKey: TEST_QUOTE_KEY,
     adminPassword: "admin",
-    authTokens: [],
     loginStrategy: "manual",
     hasWeworkCredentials: false,
     publicBaseUrl: "https://weworking.test",
@@ -80,7 +79,6 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
       adminPassword: true,
       quoteKey: true,
       cookieKey: true,
-      authTokens: 0,
     },
     ...overrides,
   };

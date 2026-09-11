@@ -33,7 +33,6 @@ export default defineConfig({
           ADMIN_PASSWORD: "test-admin-password",
           QUOTE_SIGNING_KEY: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
           COOKIE_SIGNING_KEY: "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
-          AUTH_TOKENS: "[]",
           WEWORK_USERNAME: "",
           WEWORK_PASSWORD: "",
         },

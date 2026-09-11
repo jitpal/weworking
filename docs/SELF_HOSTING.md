@@ -60,7 +60,6 @@ openssl rand -hex 32
 Optional:
 
 ```sh
-npx wrangler secret put AUTH_TOKENS      # static scoped bearer tokens, JSON array
 npx wrangler secret put WEWORK_USERNAME  # only if you want automatic login
 npx wrangler secret put WEWORK_PASSWORD
 ```
@@ -70,7 +69,6 @@ npx wrangler secret put WEWORK_PASSWORD
 | `ADMIN_PASSWORD` | gates `/admin/*` and the OAuth approval screen | the only thing between the internet and your session store; make it long |
 | `QUOTE_SIGNING_KEY` | HMAC-SHA-256 key for booking quotes | rotating it invalidates outstanding quotes (harmless) |
 | `COOKIE_SIGNING_KEY` | signs the admin session cookie | rotating it logs you out of `/admin` |
-| `AUTH_TOKENS` | static bearer tokens as `[{name, sha256, scopes}]` | hashes only; omit entirely to use OAuth alone |
 | `WEWORK_USERNAME` / `WEWORK_PASSWORD` | automatic Auth0 login | often blocked from datacenter IPs; impossible with MFA |
 
 For local development put the same names in `.dev.vars` (copy `.dev.vars.example`). Never commit it.
@@ -126,19 +124,21 @@ This fails in two cases, and neither clears on retry:
 
 Access tokens last about 12 hours. With a refresh token the Worker renews itself (lazily on 401, and proactively via the `17 5 * * *` cron when under 6 hours remain), so in practice you revisit this page monthly at most, usually only after you change your WeWork password or sign out everywhere.
 
-## 6. Issue a static token (optional)
+## 6. Mint an API key (optional)
 
-```sh
-node scripts/hash-token.mjs --name claude-code --scopes read,write
+An agent that can send a header does not need the OAuth flow. Open `https://<your-worker>.workers.dev/admin/keys`, sign in with `ADMIN_PASSWORD`, name the key, tick its scopes and press Create key.
+
+The key looks like `ww_` followed by 43 characters and is sent as a plain bearer header:
+
+```
+Authorization: Bearer ww_<your-key>
 ```
 
-Copy the printed token into your client config (it is shown once), merge the printed JSON entry into your `AUTH_TOKENS` array, and push the whole array:
+The page shows it once, with the Claude Code, Cursor and curl lines already filled in. Copy it then: the worker keeps only its SHA-256, so it cannot be shown again. Lose it and you mint a new one.
 
-```sh
-npx wrangler secret put AUTH_TOKENS
-```
+Tick `read` only for anything that should never spend credits. `write` adds booking and cancelling, within the caps. `admin` grants nothing beyond `write` today: these pages need the admin password in a browser, not a key.
 
-Use `--scopes read` for anything that should never spend credits. `admin` additionally allows `POST /admin/session` and `GET /admin/audit`.
+Press Revoke on the same page to retire a key. It stops working on the next request.
 
 ## 7. Connect an agent
 
@@ -158,8 +158,7 @@ See [CLIENTS.md](CLIENTS.md).
     "weworkCredentials": false,
     "adminPassword": true,
     "quoteKey": true,
-    "cookieKey": true,
-    "authTokens": 2
+    "cookieKey": true
   },
   "session": {
     "state": "valid",
@@ -174,7 +173,7 @@ See [CLIENTS.md](CLIENTS.md).
 
 | Field | Meaning |
 | --- | --- |
-| `secrets.*` | presence only. `adminPassword` or `quoteKey` false means you skipped a required secret. `authTokens` is the number of entries parsed. `0` with a secret set means malformed JSON |
+| `secrets.*` | presence only. `adminPassword` or `quoteKey` false means you skipped a required secret |
 | `session.state` | `none` (never connected), `valid`, `expiring` (under 6h left), `expired` |
 | `session.source` | `login` (automatic), `manual` (pasted), `refresh`, `none` |
 | `session.hasRefreshToken` | `false` means the session dies at `expiresAt` and you must reconnect |
@@ -214,9 +213,9 @@ The daily or weekly cap, or `MAX_CREDITS_PER_BOOKING`, would be exceeded. The er
 
 If you renamed the class or removed the `new_sqlite_classes` migration, wrangler refuses. Keep the existing migration entries and append new ones; never rewrite history there, or you lose the stored session.
 
-### Rotating tokens
+### Rotating credentials
 
-- **Static bearer token.** Generate a replacement with `scripts/hash-token.mjs`, put both the old and new entries in `AUTH_TOKENS`, `wrangler secret put AUTH_TOKENS`, update the client, then remove the old entry and put the secret again. Removal takes effect on the next request after the secret propagates; there is no cache to clear.
+- **API key.** Mint the replacement at `/admin/keys`, paste it into the client, then revoke the old one on the same page. Revocation takes effect on the next request; there is no cache to clear and no redeploy.
 - **`QUOTE_SIGNING_KEY`.** `wrangler secret put QUOTE_SIGNING_KEY` with a new `openssl rand -hex 32`. Outstanding quotes become `QUOTE_INVALID`; clients just search again.
 - **`COOKIE_SIGNING_KEY`.** Same; existing admin cookies stop working and you sign in to `/admin` again.
 - **`ADMIN_PASSWORD`.** Put a new value, then rotate `COOKIE_SIGNING_KEY` too if you believe the old password leaked, so any live admin cookie dies with it.
@@ -232,7 +231,7 @@ If you renamed the class or removed the `new_sqlite_classes` migration, wrangler
   ```
 
   Deleting the grant immediately invalidates its access and refresh tokens. To revoke everything at once, delete all keys in the namespace (or delete and recreate the namespace). Every client then has to re-authorise.
-- **Static token.** Remove its entry from `AUTH_TOKENS` and `wrangler secret put AUTH_TOKENS`.
+- **API key.** Press Revoke next to it at `/admin/keys`.
 - **Everything, right now.** Set `WRITE_ENABLED="false"` and `npm run deploy` to stop all writes, then clear the WeWork session from `/admin` so reads stop too.
 
 Check `/admin/audit` afterwards to see what the credential did while it was valid.

@@ -59,7 +59,7 @@ Last reviewed: 2026-09-11.
 (Not WeWork facts; kept here because the two sets of constraints only make sense together. The rationale lives in [DESIGN.md](./DESIGN.md).)
 - McpAgent (DO-backed) deprecated/frozen; use createMcpHandler() from agents/mcp/server (stateless, MCP 2026-07-28 + legacy), new McpServer per request (SDK>=1.26)
 - MCP SDK v2 split: @modelcontextprotocol/server ; wrangler 4.131.x ; agents 0.23.x ; compatibility_date >= 2026-08-04 (nodejs_compat default)
-- Front door: static scoped bearer tokens (sha256 hashes in AUTH_TOKENS secret) Phase 1; @cloudflare/workers-oauth-provider Phase 2 (needed for claude.ai/ChatGPT connectors). Claude Code: claude mcp add --transport http --header. Cursor: headers in mcp.json. ChatGPT: OAuth or none.
+- Front door: API keys minted at /admin/keys (sha256 in the session Durable Object) and @cloudflare/workers-oauth-provider (needed for claude.ai/ChatGPT connectors). Claude Code: claude mcp add --transport http --header. Cursor: headers in mcp.json. ChatGPT: OAuth or none.
 - One SQLite Durable Object "session:default": token store, login mutex/coalescing, idempotency, caps, audit. No KV for token. Free plan OK.
 - Lazy refresh on 401 + daily cron proactive refresh. /admin/session manual token paste as escape hatch.
 - Safety: HMAC-signed quote (10min exp) required by create_booking; idempotency_key; daily/weekly caps; dry_run; read/write scopes; WRITE_ENABLED kill switch; audit log.

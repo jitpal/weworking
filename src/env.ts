@@ -30,7 +30,6 @@ declare global {
       WEWORK_USERNAME?: string;
       WEWORK_PASSWORD?: string;
       ADMIN_PASSWORD?: string;
-      AUTH_TOKENS?: string;
       QUOTE_SIGNING_KEY?: string;
       COOKIE_SIGNING_KEY?: string;
     }
@@ -65,8 +64,6 @@ export interface Env {
   WEWORK_PASSWORD?: string;
   /** Gates `/admin/*` and the OAuth approve screen. Required. */
   ADMIN_PASSWORD?: string;
-  /** JSON array of `{ name, sha256, scopes }`. Optional; `"[]"` or absent disables static tokens. */
-  AUTH_TOKENS?: string;
   /** Hex, >= 32 bytes. HMAC key for booking quotes. Required. */
   QUOTE_SIGNING_KEY?: string;
   /** Hex, >= 32 bytes. HMAC key for the admin session cookie. Required. */
@@ -108,8 +105,6 @@ export interface Config {
   /** Raw hex HMAC key for the admin cookie. */
   cookieSigningKey: string;
   adminPassword: string;
-  /** Already-parsed static bearer tokens; empty when the feature is unused. */
-  authTokens: StaticTokenConfig[];
 
   /* WeWork login */
   loginStrategy: LoginStrategyName;
@@ -128,18 +123,7 @@ export interface Config {
     adminPassword: boolean;
     quoteKey: boolean;
     cookieKey: boolean;
-    authTokens: number;
   };
-}
-
-/** One entry of the `AUTH_TOKENS` secret. The plaintext token is never stored. */
-export interface StaticTokenConfig {
-  /** Label for the audit log, e.g. `"claude-code"`. */
-  name: string;
-  /** Lower-case hex SHA-256 of the bearer token. */
-  sha256: string;
-  /** Scopes granted to this token. */
-  scopes: Array<"read" | "write" | "admin">;
 }
 
 /** Semantic version of the deployed worker, reported by `/healthz`. Keep in step with package.json. */
@@ -172,7 +156,6 @@ export function parseConfig(env: Env): Config {
   const quoteSigningKey = requireHexKey(env.QUOTE_SIGNING_KEY, "QUOTE_SIGNING_KEY");
   const cookieSigningKey = requireHexKey(env.COOKIE_SIGNING_KEY, "COOKIE_SIGNING_KEY");
   const adminPassword = requireNonEmpty(env.ADMIN_PASSWORD, "ADMIN_PASSWORD");
-  const authTokens = parseAuthTokensLenient(env.AUTH_TOKENS);
 
   const weworkUsername = emptyToUndefined(env.WEWORK_USERNAME);
   const weworkPassword = emptyToUndefined(env.WEWORK_PASSWORD);
@@ -211,7 +194,6 @@ export function parseConfig(env: Env): Config {
     quoteSigningKey,
     cookieSigningKey,
     adminPassword,
-    authTokens,
     loginStrategy,
     hasWeworkCredentials,
     publicBaseUrl: parseBaseUrl(env.PUBLIC_BASE_URL ?? DEFAULTS.PUBLIC_BASE_URL),
@@ -220,7 +202,6 @@ export function parseConfig(env: Env): Config {
       adminPassword: true,
       quoteKey: true,
       cookieKey: true,
-      authTokens: authTokens.length,
     },
   };
   if (weworkUsername !== undefined) config.weworkUsername = weworkUsername;
@@ -317,78 +298,4 @@ function parseBaseUrl(value: string): string {
     throw validation("PUBLIC_BASE_URL must use https (http is allowed only for localhost).");
   }
   return url.origin;
-}
-
-let warnedMalformedAuthTokens = false;
-
-/**
- * {@link parseAuthTokens}, but a malformed secret disables static tokens (with one
- * redacted warning) instead of taking the whole deployment down. `/healthz` then
- * reports `secrets.authTokens: 0`, which the docs explain.
- */
-export function parseAuthTokensLenient(raw: string | undefined): StaticTokenConfig[] {
-  try {
-    return parseAuthTokens(raw);
-  } catch (err) {
-    if (!warnedMalformedAuthTokens) {
-      warnedMalformedAuthTokens = true;
-      console.warn("AUTH_TOKENS is malformed; static bearer tokens are disabled.", {
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return [];
-  }
-}
-
-/**
- * Parses the `AUTH_TOKENS` secret. Absent, empty or `"[]"` yields `[]` — static
- * tokens are optional, since OAuth can be the only front door.
- */
-export function parseAuthTokens(raw: string | undefined): StaticTokenConfig[] {
-  const trimmed = emptyToUndefined(raw);
-  if (trimmed === undefined) return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    throw validation(
-      "AUTH_TOKENS is not valid JSON.",
-      'It must be a JSON array, e.g. [{"name":"claude-code","sha256":"<hex>","scopes":["read","write"]}]. Generate an entry with `node scripts/hash-token.mjs`.',
-    );
-  }
-  if (!Array.isArray(parsed)) {
-    throw validation("AUTH_TOKENS must be a JSON array.");
-  }
-
-  return parsed.map((entry, index) => {
-    const at = `AUTH_TOKENS[${index}]`;
-    if (typeof entry !== "object" || entry === null) {
-      throw validation(`${at} must be an object.`);
-    }
-    const record = entry as Record<string, unknown>;
-    const name = record.name;
-    const sha256 = record.sha256;
-    const scopes = record.scopes;
-
-    if (typeof name !== "string" || !name.trim()) {
-      throw validation(`${at}.name must be a non-empty string.`);
-    }
-    if (typeof sha256 !== "string" || !/^[0-9a-fA-F]{64}$/.test(sha256)) {
-      throw validation(`${at}.sha256 must be a 64-character hex SHA-256 digest.`);
-    }
-    if (!Array.isArray(scopes) || scopes.length === 0) {
-      throw validation(`${at}.scopes must be a non-empty array.`);
-    }
-    for (const scope of scopes) {
-      if (scope !== "read" && scope !== "write" && scope !== "admin") {
-        throw validation(`${at}.scopes may only contain "read", "write" or "admin".`);
-      }
-    }
-    return {
-      name: name.trim(),
-      sha256: sha256.toLowerCase(),
-      scopes: scopes as StaticTokenConfig["scopes"],
-    };
-  });
 }

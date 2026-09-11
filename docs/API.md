@@ -7,7 +7,7 @@ Two front doors over the same service layer. MCP tools and REST routes return th
 - OpenAPI 3.1: `GET /api/openapi.json` (public, no auth)
 - Health: `GET /healthz` (public, no auth)
 
-Everything else requires an OAuth 2.1 access token or a static bearer token (see [CLIENTS.md](CLIENTS.md)). Reads need `read`; `create_booking` and `cancel_booking` need `write`; `/admin/*` needs `admin`.
+Everything else requires an OAuth 2.1 access token or an API key, sent as `Authorization: Bearer ww_<your-key>` (see [CLIENTS.md](CLIENTS.md)). Keys are minted in the browser at `/admin/keys`; the worker stores only their SHA-256. Reads need `read`; `create_booking` and `cancel_booking` need `write`. The `admin` scope grants nothing beyond `write`: `/admin/*` is reached with the admin password in a browser, not with an agent credential.
 
 Naming: every request parameter is `snake_case`, whether it is an MCP tool argument, a REST JSON body, or a REST query string (`location_id`, `start_time`, `dry_run`, `idempotency_key`). Every response field is `camelCase`, matching the domain types in `src/core/types.ts` (`locationId`, `startLocal`, `seatsAvailable`).
 
@@ -269,10 +269,17 @@ Upstream stamps these times as `Z` even though they are local wall clock; the ma
 
 | Route | Auth | Purpose |
 | --- | --- | --- |
-| `GET /admin/connect` | admin cookie | paste a WeWork session |
-| `POST /admin/session` | admin cookie or `admin` scope | submit a session as JSON |
-| `GET /admin/status` | admin cookie or `admin` scope | session detail |
-| `GET /admin/audit?limit=50` | admin cookie or `admin` scope | audit log, redacted |
+Every route under `/admin` needs the signed admin cookie from `POST /admin/login` (`ADMIN_PASSWORD`). No agent credential opens them.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /admin/connect` | paste a WeWork session |
+| `POST /admin/session` | submit a session (form post or JSON body) |
+| `GET /admin/keys` | list API keys, and the form that mints one |
+| `POST /admin/keys` | mint a key and display it once |
+| `POST /admin/keys/:id/revoke` | revoke a key |
+| `GET /admin/status` | session detail |
+| `GET /admin/audit?limit=50` | audit log, redacted |
 
 ## Errors
 

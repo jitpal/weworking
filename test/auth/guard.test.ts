@@ -4,33 +4,57 @@
  * `resolveActor` has to behave identically whether it is called from inside the
  * OAuth provider's `apiHandler` (props already decrypted) or from middleware on a
  * raw request, because `src/index.ts` may do either.
+ *
+ * The Durable Object is a fake `SESSION` binding: `getSessionStub()` only calls
+ * `idFromName()` and `get()`, so a plain object is enough to pin down what the guard
+ * does with a match, a miss and a failure.
  */
 
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   actorMiddleware,
   baseUrlFrom,
   bearerToken,
   hasScope,
   isOAuthActorProps,
+  matchApiKey,
   propsFromContext,
   requireScope,
   resolveActor,
   unauthorizedResponse,
 } from "../../src/auth/guard";
 import { sha256Hex } from "../../src/auth/tokens";
-import type { Actor } from "../../src/core/types";
+import type { Actor, Scope } from "../../src/core/types";
 import type { Env } from "../../src/env";
 import { isAppError } from "../../src/errors";
+import type { ApiKeyMatch } from "../../src/session/do";
 
-const TOKEN = "s3cret-static-token";
+/** A key shaped like the real thing; only its digest ever reaches the fake stub. */
+const TOKEN = "ww_Ux3Wm7Kd0pQvRt5YbN2cLh8ZfA1sJe4GiOu6VnT9xMk";
 
-async function envWithToken(scopes: string[] = ["read", "write"]): Promise<Env> {
-  const digest = await sha256Hex(TOKEN);
+type MatchResult = ApiKeyMatch | undefined;
+
+/** An `Env` whose session Durable Object answers `matchApiKey` with `result`. */
+function envWithKey(result: MatchResult | (() => MatchResult), matchApiKeySpy = vi.fn()): Env {
+  const stub = {
+    matchApiKey: async (digest: string) => {
+      matchApiKeySpy(digest);
+      return typeof result === "function" ? result() : result;
+    },
+  };
   return {
-    AUTH_TOKENS: JSON.stringify([{ name: "claude-code", sha256: digest, scopes }]),
+    SESSION: { idFromName: (name: string) => name, get: () => stub },
   } as unknown as Env;
+}
+
+/** The match a live `read`+`write` key produces. */
+function liveKey(scopes: Scope[] = ["read", "write"]): ApiKeyMatch {
+  return { id: "key-1", name: "claude-code", scopes };
+}
+
+async function envWithToken(scopes: Scope[] = ["read", "write"]): Promise<Env> {
+  return envWithKey(liveKey(scopes));
 }
 
 function request(
@@ -83,7 +107,7 @@ describe("resolveActor", () => {
     });
   });
 
-  it("keeps the kind from props when the provider validated a static token", async () => {
+  it("keeps the kind from props when the provider validated an API key", async () => {
     const env = await envWithToken();
     await expect(
       resolveActor(request(), env, {
@@ -106,15 +130,55 @@ describe("resolveActor", () => {
     await expect(resolveActor(req, env, { scopes: [] })).resolves.toMatchObject({ kind: "bearer" });
   });
 
-  it("returns null with no credential, a wrong token, or no configured tokens", async () => {
-    const env = await envWithToken();
-    await expect(resolveActor(request(), env)).resolves.toBeNull();
-    await expect(resolveActor(request({ Authorization: "Bearer nope" }), env)).resolves.toBeNull();
+  it("returns null with no credential and for a key the Durable Object does not know", async () => {
+    await expect(resolveActor(request(), await envWithToken())).resolves.toBeNull();
     await expect(
-      resolveActor(request({ Authorization: `Bearer ${TOKEN}` }), {
-        AUTH_TOKENS: "[]",
-      } as unknown as Env),
+      resolveActor(request({ Authorization: `Bearer ${TOKEN}` }), envWithKey(undefined)),
     ).resolves.toBeNull();
+  });
+});
+
+describe("matchApiKey", () => {
+  it("gives the key's own scopes to the actor", async () => {
+    await expect(matchApiKey(envWithKey(liveKey(["read"])), TOKEN)).resolves.toEqual({
+      kind: "bearer",
+      name: "claude-code",
+      scopes: ["read"],
+      accountId: "default",
+    });
+    await expect(matchApiKey(envWithKey(liveKey(["admin"])), TOKEN)).resolves.toMatchObject({
+      scopes: ["admin"],
+    });
+  });
+
+  it("looks the key up by SHA-256, never by its plaintext", async () => {
+    const spy = vi.fn();
+    await matchApiKey(envWithKey(liveKey(), spy), TOKEN);
+    expect(spy).toHaveBeenCalledWith(await sha256Hex(TOKEN));
+    expect(spy).not.toHaveBeenCalledWith(TOKEN);
+  });
+
+  it("returns null for a revoked key (the Durable Object stops matching it)", async () => {
+    await expect(matchApiKey(envWithKey(undefined), TOKEN)).resolves.toBeNull();
+  });
+
+  it("treats a Durable Object failure as no match rather than an error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = envWithKey(() => {
+      throw new Error("session store unreachable");
+    });
+    await expect(matchApiKey(env, TOKEN)).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(TOKEN);
+    warn.mockRestore();
+  });
+
+  it("skips the Durable Object entirely for anything without the ww_ prefix", async () => {
+    const spy = vi.fn();
+    const env = envWithKey(liveKey(), spy);
+    await expect(matchApiKey(env, "an-oauth-access-token")).resolves.toBeNull();
+    await expect(matchApiKey(env, "ww_")).resolves.toBeNull();
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -189,7 +253,7 @@ describe("baseUrlFrom", () => {
 });
 
 describe("actorMiddleware", () => {
-  it("sets the actor from a static bearer token and lets the route run", async () => {
+  it("sets the actor from an API key and lets the route run", async () => {
     const app = new Hono<{ Bindings: Env; Variables: { actor?: Actor } }>();
     app.use("/mcp", actorMiddleware());
     app.get("/mcp", (c) => c.json({ actor: c.get("actor") }));

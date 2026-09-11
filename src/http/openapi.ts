@@ -276,7 +276,7 @@ export function openapiDocument(baseUrl: string): Record<string, unknown> {
           type: "http",
           scheme: "bearer",
           description:
-            "A static token from the operator's `AUTH_TOKENS` secret. Scopes are fixed per token.",
+            "An API key the operator minted at /admin/keys, sent as `Authorization: Bearer ww_...`. Its scopes are fixed when it is created.",
         },
         oauth2: {
           type: "oauth2",
@@ -290,7 +290,7 @@ export function openapiDocument(baseUrl: string): Record<string, unknown> {
               scopes: {
                 read: "Search locations, availability and bookings.",
                 write: "Create and cancel bookings.",
-                admin: "Manage the stored WeWork session and read the audit log.",
+                admin: "Reserved. Grants nothing beyond write today.",
               },
             },
           },

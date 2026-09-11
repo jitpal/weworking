@@ -2,18 +2,21 @@
  * The OAuth approval screen and the landing page, driven against a fake
  * `env.OAUTH_PROVIDER` so no KV or real provider is involved.
  *
- * What matters here is the policy around `completeAuthorization`: the password, the
- * CSRF binding, the scope narrowing, and the props the grant ends up carrying —
- * those props become the `Actor` on every later `/mcp` call.
+ * What matters here is the policy around `completeAuthorization`: the password (or
+ * the admin cookie standing in for it), the CSRF binding, the scope narrowing, and
+ * the props the grant ends up carrying — those props become the `Actor` on every
+ * later `/mcp` call.
  */
 
 import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider";
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ADMIN_COOKIE } from "../../src/auth/admin-session";
 import { grantableScopes, landingRoutes, normaliseScopes, oauthRoutes } from "../../src/auth/oauth";
 import { clearFailures } from "../../src/auth/rate-limit";
 import {
   ADMIN_PASSWORD,
+  adminJar,
   cookieHeader,
   cookiesFrom,
   fakeEnv,
@@ -300,6 +303,101 @@ describe("POST /oauth/authorize", () => {
     const { response, provider } = await approve({ password: ADMIN_PASSWORD, ip });
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBeTypeOf("string");
+    expect(provider.completeAuthorization).not.toHaveBeenCalled();
+  });
+});
+
+describe("the operator's browser session", () => {
+  it("asks for the password when the browser is not signed in", async () => {
+    const { html } = await loadApprovePage();
+    expect(html).toContain('name="password"');
+    expect(html).not.toContain("Signed in as the operator");
+  });
+
+  it("signs the browser in when the password is accepted", async () => {
+    const { response } = await approve({ password: ADMIN_PASSWORD });
+    expect(response.status).toBe(302);
+    expect(cookiesFrom(response)[ADMIN_COOKIE]).toBeTypeOf("string");
+    expect(cookiesFrom(response)[ADMIN_COOKIE]).not.toBe("");
+  });
+
+  it("does not ask a signed-in browser for the password again", async () => {
+    const env = envWith(fakeProvider());
+    const response = await app.request(
+      "/oauth/authorize?response_type=code&client_id=client-123",
+      { headers: { ...HTML_HEADERS, Cookie: cookieHeader(await adminJar(env)) } },
+      env,
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).not.toContain('name="password"');
+    expect(html).toContain("Signed in as the operator");
+    expect(html).toContain("Approve");
+  });
+
+  it("approves on the cookie alone, with no password in the form", async () => {
+    const provider = fakeProvider();
+    const env = envWith(provider);
+    const session = cookieHeader(await adminJar(env));
+    const page = await app.request(
+      "/oauth/authorize?response_type=code&client_id=client-123",
+      { headers: { ...HTML_HEADERS, Cookie: session } },
+      env,
+    );
+    const html = await page.text();
+    const body = new URLSearchParams({
+      csrf: hiddenField(html, "csrf"),
+      auth_request: hiddenField(html, "auth_request"),
+    });
+    body.append("scope", "read");
+
+    const response = await app.request(
+      "/oauth/authorize",
+      {
+        method: "POST",
+        headers: {
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `${cookieHeader(cookiesFrom(page))}; ${session}`,
+        },
+        body,
+      },
+      env,
+    );
+    expect(response.status).toBe(302);
+    expect(provider.completeAuthorization).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires the CSRF token from a signed-in browser", async () => {
+    const provider = fakeProvider();
+    const env = envWith(provider);
+    const session = cookieHeader(await adminJar(env));
+    const page = await app.request(
+      "/oauth/authorize?response_type=code&client_id=client-123",
+      { headers: { ...HTML_HEADERS, Cookie: session } },
+      env,
+    );
+    const html = await page.text();
+    const body = new URLSearchParams({
+      csrf: "forged",
+      auth_request: hiddenField(html, "auth_request"),
+    });
+    body.append("scope", "read");
+
+    const response = await app.request(
+      "/oauth/authorize",
+      {
+        method: "POST",
+        headers: {
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `${cookieHeader(cookiesFrom(page))}; ${session}`,
+        },
+        body,
+      },
+      env,
+    );
+    expect(response.status).toBe(403);
     expect(provider.completeAuthorization).not.toHaveBeenCalled();
   });
 });

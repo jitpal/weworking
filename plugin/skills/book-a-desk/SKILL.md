@@ -49,7 +49,7 @@ For "what do I have booked", just call `list_bookings`. For cancelling, call `li
 | `NOT_AVAILABLE` | the desk went while you were asking | search again and offer the new options |
 | `BOOKING_REFUSED` | WeWork refused (credits, policy, overlap) | nothing was charged; report the reason; do not retry blindly |
 | `WRITE_DISABLED` | the deployment is read-only | searching still works; say booking is switched off |
-| `FORBIDDEN_SCOPE` | the token lacks `write` | say so; a human must issue a `read,write` token |
+| `FORBIDDEN_SCOPE` | the credential lacks `write` | say so; a human must mint a `read,write` key at `/admin/keys` |
 | `UNAUTHORIZED` | bad or missing credential | the client config is wrong; a human must fix it |
 | `UNSUPPORTED_SPACE_TYPE` | rooms and offices are not implemented | hot desks only |
 | `NOT_FOUND` | unknown booking or location id | re-list and use a returned id |

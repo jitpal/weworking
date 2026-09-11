@@ -15,16 +15,13 @@ WEWORK_USERNAME=""
 WEWORK_PASSWORD=""
 
 # --- Admin access (REQUIRED) ------------------------------------------------
-# Gates /admin/* (the connect page, audit log, status) and the OAuth approve screen.
+# Gates /admin/* (connect, API keys, audit log, status) and the OAuth approve screen.
 # Use a long random passphrase.
 ADMIN_PASSWORD=""
 
-# --- Static scoped bearer tokens (OPTIONAL) ---------------------------------
-# JSON array of tokens that may call /mcp and /api/*, stored as SHA-256 hashes.
-# Generate an entry with: node scripts/hash-token.mjs claude-code read write
-# Example:
-# AUTH_TOKENS='[{"name":"claude-code","sha256":"<64 hex chars>","scopes":["read","write"]}]'
-AUTH_TOKENS="[]"
+# --- API keys ---------------------------------------------------------------
+# There is no secret for these. Sign in at /admin/keys and mint one; the worker
+# stores its SHA-256 in the session Durable Object and shows you the key once.
 
 # --- Signing keys (REQUIRED) ------------------------------------------------
 # 32+ random bytes, hex. Generate with:
