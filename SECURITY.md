@@ -12,7 +12,7 @@ Expect an acknowledgement within a few days. This is a volunteer project, so the
 
 ## Threat model
 
-Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first — it states what this software is trying to protect (WeWork credentials, Auth0 tokens, Worker tokens, your credit balance), where the trust boundaries are, and which risks are accepted rather than mitigated. A report that an accepted risk exists is not a vulnerability; a report that a boundary can be crossed is.
+Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) first. It states what this software is trying to protect (WeWork credentials, Auth0 tokens, Worker tokens, your credit balance), where the trust boundaries are, and which risks are accepted rather than mitigated. A report that an accepted risk exists is not a vulnerability; a report that a boundary can be crossed is.
 
 ## In scope
 
@@ -43,6 +43,6 @@ If you run this, the security of your WeWork account depends on these:
 - `AUTH_TOKENS` stores only SHA-256 hashes, compared in constant time. The plaintext token exists once, in your client's config.
 - `QUOTE_SIGNING_KEY` and `COOKIE_SIGNING_KEY` should be 32 random bytes (`openssl rand -hex 32`) and should differ from each other.
 - WeWork access and refresh tokens are stored only in the `WeWorkSession` Durable Object's SQLite storage, inside your Cloudflare account. They are never returned to a client and never logged; all logging passes through `src/redact.ts`.
-- `/healthz` deliberately reports presence booleans and session age only — no values.
+- `/healthz` deliberately reports presence booleans and session age only, never values.
 - Rotation: re-run `wrangler secret put` for Worker secrets (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#rotating-tokens)); revoke a WeWork session by signing out on `members.wework.com` and then `POST /admin/session` a fresh one, or clear it from the admin page.
 - Revoking an OAuth client deletes its grant from `OAUTH_KV`; revoking a static token means removing its entry from `AUTH_TOKENS` and redeploying the secret.

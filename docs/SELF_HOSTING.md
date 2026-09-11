@@ -1,12 +1,12 @@
 # Self-hosting weworking
 
-The long version of the README quick start, with troubleshooting. One deployment serves one WeWork account — yours.
+The long version of the README quick start, with troubleshooting. One deployment serves one WeWork account, yours.
 
-Before you start, re-read the disclaimer in the [README](../README.md#unofficial--read-this-first). This software spends your credits and may violate WeWork's terms of service.
+Before you start, re-read the disclaimer in the [README](../README.md#unofficial-read-this-first). This software spends your credits and may violate WeWork's terms of service.
 
 ## Requirements
 
-- Cloudflare account. The free plan is sufficient — see [Free plan notes](#free-plan-notes).
+- Cloudflare account. The free plan is sufficient, see [Free plan notes](#free-plan-notes).
 - Node 22 and npm.
 - A WeWork account with hot-desk credits and access to `members.wework.com` in a browser.
 
@@ -45,7 +45,7 @@ npx wrangler secret put QUOTE_SIGNING_KEY
 npx wrangler secret put COOKIE_SIGNING_KEY
 ```
 
-Generate the two signing keys separately — do not reuse one value for both:
+Generate the two signing keys separately. Do not reuse one value for both:
 
 ```sh
 openssl rand -hex 32
@@ -99,24 +99,24 @@ curl -s https://<your-worker>.workers.dev/healthz | jq
 
 ### Option A: automatic login
 
-Set `WEWORK_USERNAME` and `WEWORK_PASSWORD`, keep `LOGIN_STRATEGY="auto"`, and make any read call. The Worker performs the Auth0 password-realm + PKCE flow, stores the access token and refresh token in the Durable Object, and refreshes from then on.
+Set `WEWORK_USERNAME` and `WEWORK_PASSWORD`, keep `LOGIN_STRATEGY="auto"`, and make any read call. The Worker performs the Auth0 password-realm and PKCE flow, stores the access token and refresh token in the Durable Object, and refreshes from then on. Once it holds a refresh token it does not log in again, so the bot-detection risk is confined to the first login.
 
-This fails in two common cases, both permanent:
+This fails in two cases, and neither clears on retry:
 
-- **Auth0 bot detection.** Logins from Cloudflare's datacenter IPs frequently get `requires_verification` or a captcha. You will see `UPSTREAM_BLOCKED`. No header or retry fixes it.
+- **Auth0 bot detection.** Logins from Cloudflare's datacenter IPs may get `requires_verification` or a captcha. You will see `UPSTREAM_BLOCKED`. No header or retry fixes it.
 - **MFA on the account.** Not supported. Use option B.
 
-### Option B: paste a session (recommended)
+### Option B: paste a session
 
 1. Open `https://<your-worker>.workers.dev/admin/connect` and sign in with `ADMIN_PASSWORD`.
 2. In another tab, sign in to `https://members.wework.com` as normal.
 3. Follow the instructions on the connect page to copy your session. It accepts any of:
-   - the Auth0 SPA cache entry from `localStorage` (the key starting `@@auth0spajs@@`) — best, because it includes the refresh token;
+   - the Auth0 SPA cache entry from `localStorage` (the key starting `@@auth0spajs@@`). This is the best option because it includes the refresh token;
    - a raw JSON object `{"access_token": "...", "refresh_token": "...", "expires_in": 43200}`;
    - a bare access token string (works, but expires in ~12 hours with no refresh).
 4. Paste it into the textarea and submit. The page decodes the token for its expiry and the `https://wework.com/user_uuid` claim and reports the new session state.
 
-Access tokens last about 12 hours. With a refresh token the Worker renews itself (lazily on 401, and proactively via the `17 5 * * *` cron when under 6 hours remain), so in practice you revisit this page monthly at most — usually only after you change your WeWork password or sign out everywhere.
+Access tokens last about 12 hours. With a refresh token the Worker renews itself (lazily on 401, and proactively via the `17 5 * * *` cron when under 6 hours remain), so in practice you revisit this page monthly at most, usually only after you change your WeWork password or sign out everywhere.
 
 ## 6. Issue a static token (optional)
 
@@ -165,7 +165,7 @@ See [CLIENTS.md](CLIENTS.md).
 
 | Field | Meaning |
 | --- | --- |
-| `secrets.*` | presence only. `adminPassword` or `quoteKey` false means you skipped a required secret. `authTokens` is the number of entries parsed — `0` with a secret set means malformed JSON |
+| `secrets.*` | presence only. `adminPassword` or `quoteKey` false means you skipped a required secret. `authTokens` is the number of entries parsed. `0` with a secret set means malformed JSON |
 | `session.state` | `none` (never connected), `valid`, `expiring` (under 6h left), `expired` |
 | `session.source` | `login` (automatic), `manual` (pasted), `refresh`, `none` |
 | `session.hasRefreshToken` | `false` means the session dies at `expiresAt` and you must reconnect |
@@ -174,20 +174,20 @@ See [CLIENTS.md](CLIENTS.md).
 
 ### `UPSTREAM_BLOCKED`
 
-Auth0 refused the automatic login and asked for human verification (bot detection, captcha, or `requires_verification`). It is triggered by logging in from a datacenter IP, and it does not clear by retrying, changing headers, or waiting.
+Auth0 refused the automatic login and asked for human verification (bot detection, captcha, or `requires_verification`). Logging in from a datacenter IP makes this more likely, and it does not clear by retrying, changing headers, or waiting.
 
 Fix: connect via `/admin/connect` (option B above). Once you have a refresh token, the Worker never needs to log in again, and refresh requests are not subject to this check. Optionally set `LOGIN_STRATEGY="manual"` so it stops trying.
 
 ### `SESSION_EXPIRED` / `SESSION_MISSING`
 
-- `SESSION_MISSING` — nothing is stored. Either you never connected, or the session was cleared. Open `/admin/connect`.
-- `SESSION_EXPIRED` — a session exists but the access token is past its expiry and could not be refreshed (no refresh token, or the refresh was rejected because you changed your password or signed out everywhere on WeWork). Reconnect via `/admin/connect`.
+- `SESSION_MISSING`: nothing is stored. Either you never connected, or the session was cleared. Open `/admin/connect`.
+- `SESSION_EXPIRED`: a session exists but the access token is past its expiry and could not be refreshed (no refresh token, or the refresh was rejected because you changed your password or signed out everywhere on WeWork). Reconnect via `/admin/connect`.
 
 Check `/healthz` to tell them apart before debugging anything else. Agents get the same distinction in the error `hint`.
 
 ### `UPSTREAM_AUTH` on every call
 
-The stored token is being rejected by WeWork even though it has not expired — usually a token from a different account or a truncated paste. Reconnect.
+The stored token is being rejected by WeWork even though it has not expired. Usually this is a token from a different account or a truncated paste. Reconnect.
 
 ### `UPSTREAM_RATE_LIMITED`
 
@@ -195,7 +195,7 @@ WeWork returned 429. The client honours `Retry-After` up to three attempts on au
 
 ### `QUOTE_EXPIRED` / `QUOTE_INVALID`
 
-Quotes live `QUOTE_TTL_SECONDS` (default 600). Expired means search again and book with the fresh quote. Invalid means the signature did not verify — a mangled copy/paste, a quote from another deployment, or `QUOTE_SIGNING_KEY` changed since it was issued.
+Quotes live `QUOTE_TTL_SECONDS` (default 600). Expired means search again and book with the fresh quote. Invalid means the signature did not verify: a mangled copy/paste, a quote from another deployment, or `QUOTE_SIGNING_KEY` changed since it was issued.
 
 ### `CAP_EXCEEDED`
 
@@ -211,7 +211,7 @@ If you renamed the class or removed the `new_sqlite_classes` migration, wrangler
 - **`QUOTE_SIGNING_KEY`.** `wrangler secret put QUOTE_SIGNING_KEY` with a new `openssl rand -hex 32`. Outstanding quotes become `QUOTE_INVALID`; clients just search again.
 - **`COOKIE_SIGNING_KEY`.** Same; existing admin cookies stop working and you sign in to `/admin` again.
 - **`ADMIN_PASSWORD`.** Put a new value, then rotate `COOKIE_SIGNING_KEY` too if you believe the old password leaked, so any live admin cookie dies with it.
-- **WeWork session.** Sign out on `members.wework.com` (this invalidates the refresh token), then paste a fresh session at `/admin/connect`. Clearing the stored session from the admin page removes it from the Durable Object but does not revoke it upstream — do both.
+- **WeWork session.** Sign out on `members.wework.com` (this invalidates the refresh token), then paste a fresh session at `/admin/connect`. Clearing the stored session from the admin page removes it from the Durable Object but does not revoke it upstream. Do both.
 
 ### Revoking a client
 
@@ -222,7 +222,7 @@ If you renamed the class or removed the `new_sqlite_classes` migration, wrangler
   npx wrangler kv key delete --binding OAUTH_KV "<key>"
   ```
 
-  Deleting the grant immediately invalidates its access and refresh tokens. To revoke everything at once, delete all keys in the namespace (or delete and recreate the namespace) — every client then has to re-authorise.
+  Deleting the grant immediately invalidates its access and refresh tokens. To revoke everything at once, delete all keys in the namespace (or delete and recreate the namespace). Every client then has to re-authorise.
 - **Static token.** Remove its entry from `AUTH_TOKENS` and `wrangler secret put AUTH_TOKENS`.
 - **Everything, right now.** Set `WRITE_ENABLED="false"` and `npm run deploy` to stop all writes, then clear the WeWork session from `/admin` so reads stop too.
 
@@ -237,7 +237,7 @@ The default architecture fits the Cloudflare free plan:
 - **Cron triggers** are on the free plan. One daily run at `17 5 * * *`.
 - Worker CPU and subrequest limits matter mainly for the headless login path (10-14 subrequests for the Auth0 redirect chain). Normal reads and bookings are a handful of subrequests.
 
-Future options that are **not** free and are deliberately not used today:
+Options that are deliberately not used today:
 
-- **Browser Rendering** (Puppeteer in a real browser) would defeat Auth0 bot detection for automatic login, but it is a paid add-on with its own limits. The `/admin/connect` paste flow exists so you do not need it.
-- **A relay on a residential IP** — a tiny local process that logs in from your own network and pushes the session to `POST /admin/session` — achieves the same thing for free, at the cost of running something locally. A cron'd `curl` against the admin endpoint is enough.
+- **Browser Rendering** (Puppeteer in a real browser inside the Worker) would pass the fingerprint side of Auth0's checks for automatic login. It is not built yet and has its own quotas. The `/admin/connect` paste flow exists so you do not need it.
+- **A relay on a residential IP.** A tiny local process that logs in from your own network and pushes the session to `POST /admin/session` achieves the same thing for free, at the cost of running something locally. A cron'd `curl` against the admin endpoint is enough.

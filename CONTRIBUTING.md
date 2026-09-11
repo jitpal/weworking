@@ -14,7 +14,7 @@ cp .dev.vars.example .dev.vars   # fill in what you need
 npm run dev                      # wrangler dev on http://localhost:8787
 ```
 
-You do not need a WeWork account to work on most of the codebase — the test suite runs entirely off fixtures.
+You do not need a WeWork account to work on most of the codebase. The test suite runs entirely off fixtures.
 
 ## Before you open a PR
 
@@ -34,7 +34,7 @@ Every upstream response used in tests lives in `test/fixtures/wework/*.json` and
 
 ## Adding a fixture
 
-`scripts/record-fixture.mjs` records a real response from `members.wework.com`. It is **manual and live** — it is never run in CI, it needs a real session token in `WEWORK_TOKEN`, and it costs you nothing only as long as you stick to read endpoints.
+`scripts/record-fixture.mjs` records a real response from `members.wework.com`. It is **manual and live**: it is never run in CI, it needs a real session token in `WEWORK_TOKEN`, and it costs you nothing only as long as you stick to read endpoints.
 
 ```sh
 export WEWORK_TOKEN="<access token from members.wework.com>"
@@ -55,7 +55,7 @@ Do not record write endpoints (`/common-booking/` POST, `/common-booking/cancel`
 
 ## Never commit real tokens
 
-No exceptions. `.dev.vars`, `.wrangler/`, and `dist/` are gitignored — keep it that way. Secrets go in `wrangler secret put`, placeholders go in `.dev.vars.example`. If you do leak one: rotate it at the source first (re-login on `members.wework.com` to invalidate, or `wrangler secret put` a new value), then worry about the history.
+No exceptions. `.dev.vars`, `.wrangler/`, and `dist/` are gitignored. Keep it that way. Secrets go in `wrangler secret put`, placeholders go in `.dev.vars.example`. If you do leak one: rotate it at the source first (re-login on `members.wework.com` to invalidate, or `wrangler secret put` a new value), then worry about the history.
 
 ## Commits
 

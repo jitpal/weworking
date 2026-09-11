@@ -2,13 +2,13 @@
 
 `weworking` is an unofficial, self-hostable Cloudflare Worker that lets an AI agent find and book WeWork hot desks on your behalf. It exposes the same capabilities twice: as a remote MCP server (Streamable HTTP at `/mcp`) for agent clients like Claude Code, Claude Desktop, claude.ai and ChatGPT, and as a plain REST API under `/api/*`. Both front doors are protected by OAuth 2.1 and by static scoped bearer tokens. Your WeWork session lives in a single SQLite Durable Object inside your own Cloudflare account and never reaches the model.
 
-## UNOFFICIAL — read this first
+## Unofficial. Read this first
 
 > - This project is **not affiliated with, authorised by, or endorsed by WeWork**. "WeWork" is used only to describe what the software talks to.
 > - It drives **undocumented internal endpoints** of `members.wework.com`. They can change or disappear at any time, without notice, and then this stops working.
 > - **You are responsible** for your own WeWork account, for the credits it spends, and for complying with WeWork's terms of service and any agreement your employer has with them. Automated booking may violate those terms. Decide that for yourself before deploying.
 > - Provided **without warranty of any kind**. If an agent books the wrong desk, burns your monthly credits, or gets your account flagged, that is on you. See [LICENSE](LICENSE).
-> - One deployment serves **one WeWork account** — yours. Do not run it as a shared service for other people's accounts.
+> - One deployment serves **one WeWork account**, yours. Do not run it as a shared service for other people's accounts.
 
 ## How it works
 
@@ -99,16 +99,16 @@ open https://<your-worker>.workers.dev/healthz
 
 Two options. You only need one.
 
-1. **Automatic login.** Set `WEWORK_USERNAME` and `WEWORK_PASSWORD` and the Worker logs in itself and keeps a refresh token. Caveats: Auth0 bot detection frequently blocks logins from datacenter IPs (you will see `UPSTREAM_BLOCKED`), and it does not work at all on accounts with MFA.
-2. **Paste a session (always works).** Open `https://<your-worker>.workers.dev/admin/connect`, sign in with `ADMIN_PASSWORD`, and follow the on-page instructions to copy your live session from `members.wework.com` and paste it in. Tokens last ~12 hours but come with a refresh token, so in practice you do this once and then at most monthly.
+1. **Automatic login.** Set `WEWORK_USERNAME` and `WEWORK_PASSWORD`. The Worker logs in itself on first use and keeps a refresh token. Auth0's bot detection may refuse logins from Cloudflare's datacenter IPs (you will see `UPSTREAM_BLOCKED`), and accounts with MFA cannot use this path.
+2. **Paste a session.** Open `https://<your-worker>.workers.dev/admin/connect`, sign in with `ADMIN_PASSWORD`, and follow the on-page instructions to copy your live session from `members.wework.com` and paste it in. Access tokens last about 12 hours but come with a refresh token, so you do this once and then at most monthly.
 
-Option 2 is the recommended default. Option 1 is a convenience.
+Try option 1 first if you are comfortable storing your WeWork password as a Worker secret. Option 2 always works and is the only path for MFA accounts. Both land in the same session store, and the Worker refreshes the token itself from then on.
 
 ## Connecting agents
 
 Full per-client detail, including Claude Desktop and the OpenAI Agents SDK: [docs/CLIENTS.md](docs/CLIENTS.md).
 
-**Claude Code** — OAuth (opens a browser, you approve with `ADMIN_PASSWORD`):
+**Claude Code**, with OAuth (opens a browser, you approve with `ADMIN_PASSWORD`):
 
 ```sh
 claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp
@@ -121,7 +121,7 @@ claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp 
   --header "Authorization: Bearer <token>"
 ```
 
-**Cursor** — `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+**Cursor**, in `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
 
 ```json
 {
@@ -134,15 +134,15 @@ claude mcp add --transport http weworking https://<your-worker>.workers.dev/mcp 
 }
 ```
 
-**claude.ai** — Settings > Connectors > Add custom connector, URL `https://<your-worker>.workers.dev/mcp`. OAuth only; it will walk you through the approval screen.
+**claude.ai**: Settings > Connectors > Add custom connector, URL `https://<your-worker>.workers.dev/mcp`. OAuth only. It walks you through the approval screen.
 
-**ChatGPT** — developer mode > add MCP server, same URL. OAuth only.
+**ChatGPT**: developer mode > add MCP server, same URL. OAuth only.
 
 **REST**:
 
 ```sh
 curl -s -H "Authorization: Bearer <token>" \
-  "https://<your-worker>.workers.dev/api/availability?city=London&date=2026-09-21&startTime=09:00&endTime=17:00"
+  "https://<your-worker>.workers.dev/api/availability?city=London&date=2026-09-21&start_time=09:00&end_time=17:00"
 ```
 
 ## Static tokens
@@ -162,11 +162,11 @@ Generate a token and its entry with:
 node scripts/hash-token.mjs --name claude-code --scopes read,write
 ```
 
-It prints the token once (copy it then — it is not recoverable) and the JSON entry to merge into `AUTH_TOKENS`. Then `npx wrangler secret put AUTH_TOKENS` with the full array.
+It prints the token once (copy it then, it is not recoverable) and the JSON entry to merge into `AUTH_TOKENS`. Then `npx wrangler secret put AUTH_TOKENS` with the full array.
 
 ## Configuration
 
-Secrets (`npx wrangler secret put <NAME>`, or `.dev.vars` locally — see `.dev.vars.example`):
+Secrets (`npx wrangler secret put <NAME>`, or `.dev.vars` locally, see `.dev.vars.example`):
 
 | Secret | Required | Purpose |
 | --- | --- | --- |
@@ -193,12 +193,12 @@ Bindings: `SESSION` (Durable Object `WeWorkSession`, SQLite), `OAUTH_KV` (KV), p
 
 ## Safety model
 
-Tokens are the boundary. WeWork access tokens and refresh tokens live only in the Durable Object; they are never returned by a tool, never placed in a response body, and never logged — all log output goes through a redactor. The agent holds only a Worker credential, and what that credential can do is bounded by its scopes: `read` can search and list, `write` can book and cancel within the caps, `admin` can read the audit log and replace the session. Every write additionally needs a fresh signed quote, passes the daily/weekly caps, and is written to the audit log. `WRITE_ENABLED="false"` revokes all write capability instantly. Full analysis: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+Tokens are the boundary. WeWork access tokens and refresh tokens live only in the Durable Object; they are never returned by a tool, never placed in a response body, and never logged. All log output goes through a redactor. The agent holds only a Worker credential, and what that credential can do is bounded by its scopes: `read` can search and list, `write` can book and cancel within the caps, `admin` can read the audit log and replace the session. Every write additionally needs a fresh signed quote, passes the daily/weekly caps, and is written to the audit log. `WRITE_ENABLED="false"` revokes all write capability instantly. Full analysis: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 ## Known limitations
 
 - **Hot desks only.** `space_type` exists in every schema and meeting rooms and private offices are planned, but the booking payloads for them are not captured yet. You can help: [docs/CAPTURE_GUIDE.md](docs/CAPTURE_GUIDE.md).
-- **Auth0 bot detection.** Automatic login from Cloudflare's IPs is often refused with a verification/captcha requirement (`UPSTREAM_BLOCKED`). There is no headless workaround; use `/admin/connect`.
+- **Auth0 bot detection.** Automatic login from Cloudflare's IPs can be refused with a verification or captcha requirement (`UPSTREAM_BLOCKED`). There is no headless workaround. Use `/admin/connect`.
 - **MFA accounts cannot use automatic login.** Use `/admin/connect`.
 - **API churn.** These endpoints are internal and undocumented; WeWork renames parameters without warning (it happened in August 2026). When something breaks, open an `api_change` issue with a redacted HAR.
 - **One account per deployment.** Multi-account is out of scope; there is an `accountId` seam but it is fixed to `"default"`.
@@ -230,14 +230,14 @@ Tests never touch the network; upstream responses come from `test/fixtures/`. Se
 
 ## Related projects
 
-This project follows the request flow published by **[dvcrn/wework-cli](https://github.com/dvcrn/wework-cli)** and **[dvcrn/mcp-server-wework](https://github.com/dvcrn/mcp-server-wework)** — the reference implementations for the Auth0 login and booking sequence, and the main reason this was possible at all. Also useful: **[SridarDhandapani/hotdesker](https://github.com/SridarDhandapani/hotdesker)** (Chrome extension, the most current endpoint details, including `inventory-details`) and **[jeromewir/webook](https://github.com/jeromewir/webook)** (refresh-token handling and rate limiting). None of these are affiliated with this project.
+This project follows the request flow published by **[dvcrn/wework-cli](https://github.com/dvcrn/wework-cli)** and **[dvcrn/mcp-server-wework](https://github.com/dvcrn/mcp-server-wework)**. They are the reference implementations for the Auth0 login and booking sequence, and the main reason this was possible at all. Also useful: **[SridarDhandapani/hotdesker](https://github.com/SridarDhandapani/hotdesker)** (Chrome extension, the most current endpoint details, including `inventory-details`) and **[jeromewir/webook](https://github.com/jeromewir/webook)** (refresh-token handling and rate limiting). None of these are affiliated with this project.
 
 ## Contributing and security
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, commit style, fixtures
-- [SECURITY.md](SECURITY.md) — report a vulnerability privately
+- [CONTRIBUTING.md](CONTRIBUTING.md): dev setup, commit style, fixtures
+- [SECURITY.md](SECURITY.md): report a vulnerability privately
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

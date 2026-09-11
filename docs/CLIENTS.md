@@ -7,8 +7,8 @@ Your deployment exposes one MCP endpoint and one REST API:
 
 Both accept two kinds of credential:
 
-- **OAuth 2.1** — the client discovers the authorisation server from a 401 on `/mcp`, registers itself, opens a browser, and you approve with `ADMIN_PASSWORD`. Required for hosted clients (claude.ai, ChatGPT) that cannot be given a header.
-- **Static bearer token** — `Authorization: Bearer <token>`, matched by SHA-256 against `AUTH_TOKENS`. Simpler for local clients and for scripts. Create one with `node scripts/hash-token.mjs --name <client> --scopes read,write`.
+- **OAuth 2.1**: the client discovers the authorisation server from a 401 on `/mcp`, registers itself, opens a browser, and you approve with `ADMIN_PASSWORD`. Required for hosted clients (claude.ai, ChatGPT) that cannot be given a header.
+- **Static bearer token**: `Authorization: Bearer <token>`, matched by SHA-256 against `AUTH_TOKENS`. Simpler for local clients and for scripts. Create one with `node scripts/hash-token.mjs --name <client> --scopes read,write`.
 
 Use a `read`-only token for anything that should never spend credits.
 
@@ -39,7 +39,7 @@ In a session, `/mcp` shows the connection state and lets you re-run the OAuth fl
 
 Claude Desktop speaks stdio, so bridge it with `mcp-remote`. Edit `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`).
 
-OAuth — `mcp-remote` opens a browser and caches the tokens under `~/.mcp-auth`:
+OAuth: `mcp-remote` opens a browser and caches the tokens under `~/.mcp-auth`:
 
 ```json
 {
@@ -71,13 +71,13 @@ Static token:
 
 Restart Claude Desktop after editing. If OAuth gets stuck, delete `~/.mcp-auth` and restart.
 
-## claude.ai (custom connector) — OAuth only
+## claude.ai (custom connector), OAuth only
 
 Settings > Connectors > Add custom connector. Paste `https://<your-worker>.workers.dev/mcp` and save. Claude registers itself dynamically, sends you to the approval screen, and you sign in with `ADMIN_PASSWORD` and approve the requested scopes.
 
 There is no way to attach a custom header, so a static token will not work here. The same applies to the Claude mobile and desktop apps when they use connectors rather than a local config.
 
-## ChatGPT (developer mode) — OAuth only
+## ChatGPT (developer mode), OAuth only
 
 Settings > Connectors > Advanced > developer mode, then add an MCP server with URL `https://<your-worker>.workers.dev/mcp` and authentication set to OAuth. Approve with `ADMIN_PASSWORD` when the browser opens.
 
@@ -100,7 +100,7 @@ Static token:
 }
 ```
 
-OAuth — omit `headers` and Cursor runs the flow itself:
+OAuth: omit `headers` and Cursor runs the flow itself:
 
 ```json
 {
@@ -163,7 +163,7 @@ TOKEN=<token>
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/whoami" | jq
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/locations?city=London" | jq
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/availability?city=London&date=2026-09-21&startTime=09:00&endTime=17:00" | jq
+  "$BASE/api/availability?city=London&date=2026-09-21&start_time=09:00&end_time=17:00" | jq
 ```
 
 A write, dry run first (`quote` comes from an availability result):

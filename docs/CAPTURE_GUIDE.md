@@ -10,10 +10,10 @@ If you have a WeWork membership that can book a meeting room or a private office
 
 Four requests, in order, from one real booking:
 
-1. **`get-spaces` with room parameters.** `GET /workplaceone/api/spaces/get-spaces?...` as issued when you browse meeting rooms rather than desks. The important part is which parameters change — `type` is `0` for desks, and we need the value (and any extra parameters such as `capacity`, duration, or a room-specific flag) for rooms and offices. Include the full response.
+1. **`get-spaces` with room parameters.** `GET /workplaceone/api/spaces/get-spaces?...` as issued when you browse meeting rooms rather than desks. The important part is which parameters change: `type` is `0` for desks, and we need the value (and any extra parameters such as `capacity`, duration, or a room-specific flag) for rooms and offices. Include the full response.
 2. **`inventory-details`.** `GET /workplaceone/api/common-booking/inventory-details?...` for the space you are about to book. This is where `kubeSpaceId` comes from, and the parameter names changed in August 2026, so the exact query string matters.
-3. **`quote`.** `POST /workplaceone/api/common-booking/quote` — the full request body and response. We need to know which id goes in `SpaceID` for a room, and where the credit cost appears (`grandTotal.creditRatio` for desks).
-4. **`booking`.** `POST /workplaceone/api/common-booking/` — the full request body and response. For desks the body contains `SpaceType: 4`; rooms almost certainly differ, along with `MailData`, `LocationType`, and the time fields.
+3. **`quote`.** `POST /workplaceone/api/common-booking/quote`, the full request body and response. We need to know which id goes in `SpaceID` for a room, and where the credit cost appears (`grandTotal.creditRatio` for desks).
+4. **`booking`.** `POST /workplaceone/api/common-booking/`, the full request body and response. For desks the body contains `SpaceType: 4`; rooms almost certainly differ, along with `MailData`, `LocationType`, and the time fields.
 
 Bonus, if you can get them: the **cancel** request (`POST /common-booking/cancel?...`) for the same booking, and one **upcoming bookings** response (`GET /common-booking/get-app-upcoming-bookings?...`) that contains the room booking, so we can map its fields.
 
@@ -80,7 +80,7 @@ Then **read the file** before you post it:
 grep -Eio 'bearer [a-z0-9]{8}|eyJ[a-z0-9_-]{10,}|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' capture.redacted.har | sort -u
 ```
 
-That should print nothing. Also skim for your real name, phone number, employer name, and anything in a `MailData` block — WeWork puts recipient details there. Building names, addresses, and time zones are public and should stay.
+That should print nothing. Also skim for your real name, phone number, employer name, and anything in a `MailData` block, since WeWork puts recipient details there. Building names, addresses, and time zones are public and should stay.
 
 ## Send it
 
