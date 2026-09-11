@@ -2,7 +2,7 @@
 
 The long version of the README quick start, with troubleshooting. One deployment serves one WeWork account, yours.
 
-Before you start, re-read the disclaimer in the [README](../README.md#unofficial-read-this-first). This software spends your credits and may violate WeWork's terms of service.
+Before you start, re-read the disclaimer in the [README](../README.md). This software spends your credits and may violate WeWork's terms of service.
 
 ## Requirements
 
