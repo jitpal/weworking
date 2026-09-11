@@ -75,7 +75,7 @@ Restart Claude Desktop after editing. If OAuth gets stuck, delete `~/.mcp-auth` 
 
 ## claude.ai (custom connector), OAuth only
 
-Settings > Connectors > Add custom connector. Paste `https://<your-worker>.workers.dev/mcp` and save. Claude registers itself dynamically, sends you to the approval screen, and you sign in with `ADMIN_PASSWORD` and approve the requested scopes.
+Settings > Connectors > Add custom connector. Paste `https://<your-worker>.workers.dev/mcp` and save. Claude registers itself dynamically, sends you to the approval screen, and you sign in with `ADMIN_PASSWORD` and approve the requested scopes. Only `read` is ticked for you; tick `write` as well if you want that client to be able to book and cancel.
 
 There is no way to attach a custom header, so an API key will not work here. The same applies to the Claude mobile and desktop apps when they use connectors rather than a local config.
 

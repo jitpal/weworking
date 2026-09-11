@@ -17,9 +17,18 @@
  * is why the page says "drag it" rather than "click it".
  */
 
-/** The policy every page carries. `form-action 'self'` keeps a password post local. */
+/**
+ * The policy every page carries.
+ *
+ * `form-action 'self'` keeps a password post local, and `frame-ancestors 'none'`
+ * means no other site can put the approval screen or the connect page in a frame.
+ * `SameSite=Lax` already makes framed clickjacking impractical (a Lax cookie is not
+ * sent into a third-party frame), so this is defence in depth, sent as a header
+ * alongside `X-Frame-Options: DENY` for browsers that honour only the older one.
+ * The meta tag ignores `frame-ancestors`; the header is what enforces it.
+ */
 export const CONTENT_SECURITY_POLICY =
-  "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'";
+  "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
 
 /** Escapes text for interpolation into HTML text or a quoted attribute. */
 export function escapeHtml(value: unknown): string {
@@ -143,6 +152,7 @@ export function htmlResponse(html: string, status = 200, headers: HeadersInit = 
       "Content-Security-Policy": CONTENT_SECURITY_POLICY,
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
       ...headers,
     },
   });

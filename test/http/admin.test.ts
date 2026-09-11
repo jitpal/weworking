@@ -184,6 +184,9 @@ describe("GET /admin", () => {
     expect(html).toContain('href="/admin/audit"');
     expect(html).toContain("https://desk.example.com/mcp");
     expect(html).toContain("Content-Security-Policy");
+    // Defence in depth against clickjacking the operator pages.
+    expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(response.headers.get("X-Frame-Options")).toBe("DENY");
     expect(stub.getSessionInfo).toHaveBeenCalled();
   });
 

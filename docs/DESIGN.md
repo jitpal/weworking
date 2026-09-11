@@ -203,8 +203,10 @@ every listing writes the buildings it saw, and the write is awaited.
   which is how an MCP client discovers that this server speaks OAuth.
 - OAuth endpoints: `/oauth/authorize` (our approval page), `/oauth/token` and
   `/oauth/register` (the provider's). The approval page asks for `ADMIN_PASSWORD`,
-  shows the client name and the requested scopes, and calls `completeAuthorization`
-  with the actor props. Dynamic client registration and CIMD are on.
+  shows the client name and the requested scopes with only `read` pre-ticked, and
+  calls `completeAuthorization` with the actor props. Dynamic client registration and
+  CIMD are on; a registered client expires after 30 days and registrations are rate
+  limited per IP.
 - `/admin/*` takes the signed admin cookie and nothing else. The same cookie signs off
   OAuth approvals, so the operator types the password once per browser. Pages: the
   dashboard, `/admin/connect`, `POST /admin/session`, `/admin/keys`, `/admin/audit`,

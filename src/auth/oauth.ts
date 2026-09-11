@@ -71,8 +71,14 @@ export const TOKEN_ENDPOINT = "/oauth/token";
 export const REGISTRATION_ENDPOINT = "/oauth/register";
 /** Scopes this deployment will issue. */
 export const SCOPES_SUPPORTED: Scope[] = [...SCOPES];
-/** Scopes ticked by default when a client asks for nothing specific. */
-export const DEFAULT_SCOPES: Scope[] = ["read", "write"];
+/**
+ * Scopes the approval form pre-ticks.
+ *
+ * `read` only, deliberately. `write` spends the operator's money, so granting it is
+ * a decision the operator makes by ticking a box, not one they make by not
+ * un-ticking one. A client that asked for `write` still has it offered.
+ */
+export const DEFAULT_SCOPES: Scope[] = ["read"];
 /** Rate-limit bucket for the approval form. */
 export const OAUTH_APPROVE_BUCKET = "oauth-authorize";
 /** Rate-limit bucket for dynamic client registration. */
@@ -259,7 +265,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         clientUri: client.clientUri,
         redirectUri: authRequest.redirectUri,
         requested,
-        checked: requested.length > 0 ? requested : DEFAULT_SCOPES,
+        checked: preTickedScopes(requested),
         csrf,
         sealed,
         signedIn: await hasAdminCookie(c.req.raw, c.env),
@@ -331,7 +337,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
             clientUri: client?.clientUri,
             redirectUri: authRequest.redirectUri,
             requested,
-            checked: submitted.scopes.length > 0 ? submitted.scopes : DEFAULT_SCOPES,
+            checked: submitted.scopes.length > 0 ? submitted.scopes : preTickedScopes(requested),
             csrf,
             sealed,
             error: outcome.message,
@@ -357,7 +363,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
           clientUri: client?.clientUri,
           redirectUri: authRequest.redirectUri,
           requested,
-          checked: requested.length > 0 ? requested : DEFAULT_SCOPES,
+          checked: preTickedScopes(requested),
           csrf,
           sealed,
           error: "Tick at least one scope, or cancel in your client.",
@@ -423,6 +429,15 @@ export function oauthHelpers(env: Env): OAuthHelpers | null {
 export function normaliseScopes(scopes: readonly string[] | undefined): Scope[] {
   if (!scopes) return [];
   return SCOPES_SUPPORTED.filter((scope) => scopes.includes(scope));
+}
+
+/**
+ * What the form pre-ticks: the safe subset of what the client asked for, or the safe
+ * default when it asked for nothing. Never `write`.
+ */
+export function preTickedScopes(requested: Scope[]): Scope[] {
+  if (requested.length === 0) return [...DEFAULT_SCOPES];
+  return requested.filter((scope) => DEFAULT_SCOPES.includes(scope));
 }
 
 /**

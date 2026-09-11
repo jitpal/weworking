@@ -125,9 +125,17 @@ describe("GET /oauth/authorize", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("Claude");
     expect(html).toContain("claude.ai");
+    // read is pre-ticked; write is offered but the operator has to tick it.
     expect(html).toContain('name="scope" value="read" checked');
-    expect(html).toContain('name="scope" value="write" checked');
+    expect(html).toContain('name="scope" value="write"> <span>');
+    expect(html).not.toContain('name="scope" value="write" checked');
     expect(html).toContain("Admin password");
+  });
+
+  it("sends the clickjacking headers with the approval screen", async () => {
+    const { response } = await loadApprovePage();
+    expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(response.headers.get("X-Frame-Options")).toBe("DENY");
   });
 
   it("escapes the client name rather than rendering its markup", async () => {
@@ -136,14 +144,23 @@ describe("GET /oauth/authorize", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("defaults the ticked scopes to read+write when the client asks for none", async () => {
+  it("pre-ticks read only when the client asks for no scopes", async () => {
     const provider = fakeProvider({
       parseAuthRequest: vi.fn(async () => ({ ...AUTH_REQUEST, scope: [] })),
     });
     const { html } = await loadApprovePage(provider);
     expect(html).toContain('name="scope" value="read" checked');
-    expect(html).toContain('name="scope" value="write" checked');
+    expect(html).toContain('name="scope" value="write"> <span>');
     expect(html).toContain('name="scope" value="admin"> <span>');
+  });
+
+  it("pre-ticks nothing when the client asked only for write", async () => {
+    const provider = fakeProvider({
+      parseAuthRequest: vi.fn(async () => ({ ...AUTH_REQUEST, scope: ["write"] })),
+    });
+    const { html } = await loadApprovePage(provider);
+    expect(html).not.toContain(" checked");
+    expect(html).toContain('name="scope" value="write"> <span>');
   });
 
   it("answers 503 when ADMIN_PASSWORD is unset", async () => {
