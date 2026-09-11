@@ -12,9 +12,12 @@
  * the session, so the operator types the password once per browser.
  *
  * `SameSite=Lax` is doing real work: it means a cross-site `POST` never carries the
- * cookie. Every `POST` under `/admin` additionally carries an explicit CSRF token
- * bound to a signed cookie, so a form submission is only accepted from a browser
- * that actually loaded that form.
+ * cookie. It is not the only defence, though, because a browser bug or a future
+ * relaxation would be the whole story. Every form this worker serves therefore also
+ * carries a CSRF token bound to a signed cookie, and the handler behind it verifies
+ * the pair before doing anything: sign-in, OAuth approval, both API key forms, and
+ * both session forms (`POST /admin/session`, `POST /admin/session/clear`). A
+ * submission is accepted only from a browser that actually loaded that form.
  *
  * The cookie is the *only* way past {@link requireAdmin}. An agent credential, of
  * either kind, authenticates `/mcp` and `/api/*` and nothing else.

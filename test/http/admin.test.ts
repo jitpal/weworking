@@ -17,6 +17,7 @@ import { adminRoutes } from "../../src/auth/admin-session";
 import { oauthRoutes } from "../../src/auth/oauth";
 import { sha256Hex } from "../../src/auth/tokens";
 import type { SessionInfo, SessionRecord } from "../../src/core/types";
+import type { Env } from "../../src/env";
 import { AppError } from "../../src/errors";
 import {
   type AdminSessionStub,
@@ -27,6 +28,7 @@ import {
 import type { ApiKeySummary } from "../../src/session/do";
 import {
   adminCookie,
+  adminJar,
   cookieHeader,
   cookiesFrom,
   fakeEnv,
@@ -95,6 +97,27 @@ async function adminEnv(overrides: Partial<Record<string, unknown>> = {}) {
 
 /** The `Cookie` header a signed-in operator's browser sends. */
 const AUTH = { Cookie: await adminCookie() };
+
+/** The signed-in operator's cookie jar, before any CSRF cookie is added to it. */
+const JAR = await adminJar();
+
+/**
+ * Loads a page that renders a form and returns what a browser would send back: the
+ * token embedded in the form, and a `Cookie` header carrying both the admin session
+ * and the CSRF cookie the page set.
+ */
+async function formOn(
+  app: ReturnType<typeof pages>,
+  env: Env,
+  path: string,
+): Promise<{ csrf: string; cookie: string }> {
+  const response = await app.request(path, { headers: { ...AUTH, ...HTML_HEADERS } }, env);
+  const html = await response.text();
+  return {
+    csrf: hiddenField(html, "csrf"),
+    cookie: cookieHeader({ ...JAR, ...cookiesFrom(response) }),
+  };
+}
 
 beforeEach(() => {
   parseManualSession.mockReset();
@@ -286,14 +309,20 @@ describe("POST /admin/session", () => {
     parseManualSession.mockReturnValue(RECORD);
     const stub = fakeStub();
     const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
     const response = await app.request(
       "/admin/session",
       {
         method: "POST",
-        headers: { ...AUTH, ...HTML_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ session: '{"@@auth0spajs@@::x":"{}"}' }),
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ session: '{"@@auth0spajs@@::x":"{}"}', csrf: form.csrf }),
       },
-      await adminEnv(),
+      env,
     );
     expect(response.status).toBe(303);
     const location = response.headers.get("Location") ?? "";
@@ -304,8 +333,69 @@ describe("POST /admin/session", () => {
     expect(parseManualSession).toHaveBeenCalledWith('{"@@auth0spajs@@::x":"{}"}', undefined);
   });
 
-  it("accepts a JSON body and answers with the new session info", async () => {
+  it("accepts a JSON body carrying the token and answers with the new session info", async () => {
     parseManualSession.mockReturnValue(RECORD);
+    const stub = fakeStub();
+    const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
+    const response = await app.request(
+      "/admin/session",
+      {
+        method: "POST",
+        headers: { Cookie: form.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ session: "eyJ-a-bare-jwt", csrf: form.csrf }),
+      },
+      env,
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, session: VALID_SESSION });
+    expect(stub.setSession).toHaveBeenCalledWith(RECORD);
+  });
+
+  it("refuses a cross-site post that carries the admin cookie but no token", async () => {
+    parseManualSession.mockReturnValue(RECORD);
+    const stub = fakeStub();
+    const app = pages(stub);
+    const response = await app.request(
+      "/admin/session",
+      {
+        method: "POST",
+        headers: { ...AUTH, ...HTML_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ session: "an-attacker-supplied-token" }),
+      },
+      await adminEnv(),
+    );
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toContain("submitted from another site");
+    expect(stub.setSession).not.toHaveBeenCalled();
+    expect(parseManualSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token minted for another form", async () => {
+    const stub = fakeStub();
+    const app = pages(stub);
+    const env = await adminEnv();
+    // The keys page issues a token bound to the key forms, not the session forms.
+    const form = await formOn(app, env, "/admin/keys");
+    const response = await app.request(
+      "/admin/session",
+      {
+        method: "POST",
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ session: "x", csrf: form.csrf }),
+      },
+      env,
+    );
+    expect(response.status).toBe(403);
+    expect(stub.setSession).not.toHaveBeenCalled();
+  });
+
+  it("answers a JSON caller without a token with a 403 envelope", async () => {
     const stub = fakeStub();
     const app = pages(stub);
     const response = await app.request(
@@ -317,9 +407,11 @@ describe("POST /admin/session", () => {
       },
       await adminEnv(),
     );
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, session: VALID_SESSION });
-    expect(stub.setSession).toHaveBeenCalledWith(RECORD);
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error: { code: string; hint: string } };
+    expect(body.error.code).toBe("FORBIDDEN");
+    expect(body.error.hint).toContain("csrf");
+    expect(stub.setSession).not.toHaveBeenCalled();
   });
 
   it("sends an HTML caller back to the connect page with the parser's hint", async () => {
@@ -330,14 +422,20 @@ describe("POST /admin/session", () => {
     });
     const stub = fakeStub();
     const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
     const response = await app.request(
       "/admin/session",
       {
         method: "POST",
-        headers: { ...AUTH, ...HTML_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ session: "garbage" }),
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ session: "garbage", csrf: form.csrf }),
       },
-      await adminEnv(),
+      env,
     );
     expect(response.status).toBe(303);
     const location = decodeURIComponent(response.headers.get("Location") ?? "");
@@ -352,14 +450,16 @@ describe("POST /admin/session", () => {
       throw new AppError("VALIDATION", "Unparseable.", { hint: "Try again." });
     });
     const app = pages(fakeStub());
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
     const response = await app.request(
       "/admin/session",
       {
         method: "POST",
-        headers: { ...AUTH, "Content-Type": "application/json" },
-        body: JSON.stringify({ session: "garbage" }),
+        headers: { Cookie: form.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ session: "garbage", csrf: form.csrf }),
       },
-      await adminEnv(),
+      env,
     );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: { code: string; hint: string } };
@@ -368,14 +468,20 @@ describe("POST /admin/session", () => {
 
   it("rejects an empty paste before calling the parser", async () => {
     const app = pages(fakeStub());
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
     const response = await app.request(
       "/admin/session",
       {
         method: "POST",
-        headers: { ...AUTH, ...HTML_HEADERS, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ session: "   " }),
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ session: "   ", csrf: form.csrf }),
       },
-      await adminEnv(),
+      env,
     );
     expect(response.status).toBe(303);
     expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain(
@@ -386,14 +492,16 @@ describe("POST /admin/session", () => {
 
   it("refuses an absurdly large paste", async () => {
     const app = pages(fakeStub());
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin/connect");
     const response = await app.request(
       "/admin/session",
       {
         method: "POST",
-        headers: { ...AUTH, "Content-Type": "application/json" },
-        body: JSON.stringify({ session: "x".repeat(70_000) }),
+        headers: { Cookie: form.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ session: "x".repeat(70_000), csrf: form.csrf }),
       },
-      await adminEnv(),
+      env,
     );
     expect(response.status).toBe(413);
     expect(parseManualSession).not.toHaveBeenCalled();
@@ -404,17 +512,60 @@ describe("POST /admin/session/clear", () => {
   it("clears the stored session and warns that WeWork still has it", async () => {
     const stub = fakeStub();
     const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin");
     const response = await app.request(
       "/admin/session/clear",
-      { method: "POST", headers: { ...AUTH, ...HTML_HEADERS } },
-      await adminEnv(),
+      {
+        method: "POST",
+        headers: {
+          Cookie: form.cookie,
+          ...HTML_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ csrf: form.csrf }),
+      },
+      env,
     );
     expect(response.status).toBe(303);
     expect(decodeURIComponent(response.headers.get("Location") ?? "")).toContain("cleared");
     expect(stub.clearSession).toHaveBeenCalledTimes(1);
   });
 
-  it("answers JSON callers with a result object", async () => {
+  it("answers JSON callers carrying the token with a result object", async () => {
+    const stub = fakeStub();
+    const app = pages(stub);
+    const env = await adminEnv();
+    const form = await formOn(app, env, "/admin");
+    const response = await app.request(
+      "/admin/session/clear",
+      {
+        method: "POST",
+        headers: { Cookie: form.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ csrf: form.csrf }),
+      },
+      env,
+    );
+    await expect(response.json()).resolves.toEqual({ ok: true, cleared: true });
+  });
+
+  it("refuses to wipe the session for a cross-site post with no token", async () => {
+    const stub = fakeStub();
+    const app = pages(stub);
+    const response = await app.request(
+      "/admin/session/clear",
+      { method: "POST", headers: { ...AUTH, ...HTML_HEADERS } },
+      await adminEnv(),
+    );
+    expect(response.status).toBe(403);
+    const html = await response.text();
+    expect(html).toContain("submitted from another site");
+    // The dashboard comes back with a fresh token to retry with.
+    expect(hiddenField(html, "csrf")).not.toBe("");
+    expect(stub.clearSession).not.toHaveBeenCalled();
+  });
+
+  it("answers a JSON caller without a token with a 403 envelope", async () => {
     const stub = fakeStub();
     const app = pages(stub);
     const response = await app.request(
@@ -422,10 +573,12 @@ describe("POST /admin/session/clear", () => {
       { method: "POST", headers: { ...AUTH, "Content-Type": "application/json" } },
       await adminEnv(),
     );
-    await expect(response.json()).resolves.toEqual({ ok: true, cleared: true });
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("FORBIDDEN");
+    expect(stub.clearSession).not.toHaveBeenCalled();
   });
 });
-
 describe("GET /admin/audit", () => {
   it("renders a table and escapes every cell", async () => {
     const stub = fakeStub();

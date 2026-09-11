@@ -89,6 +89,14 @@ const MAX_PASTE_BYTES = 64 * 1024;
 const DEFAULT_AUDIT_LIMIT = 50;
 /** Purpose string binding a CSRF token to the two API key forms. */
 const KEYS_CSRF_PURPOSE = "admin-keys";
+/**
+ * Purpose string binding a CSRF token to the two session forms.
+ *
+ * These two matter as much as the key forms: a cross-site POST that carried the
+ * cookie could wipe the stored WeWork session, or replace it with an attacker's,
+ * after which the deployment books on the attacker's account.
+ */
+const SESSION_CSRF_PURPOSE = "admin-session";
 /** Longest an API key name may be; mirrors the Durable Object's own check. */
 const KEY_NAME_MAX = 64;
 
@@ -113,26 +121,34 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
     const status = await collectStatus(c.env, stubFor);
     const flash = c.req.query("flash");
     const problem = c.req.query("error");
+    const { token: csrf, cookie } = await issueCsrfToken(c.env, SESSION_CSRF_PURPOSE);
     return htmlResponse(
       dashboardPage({
         status,
+        csrf,
         baseUrl: baseUrlFrom(c.req.raw, c.env),
         flash: flash ?? undefined,
         error: problem ?? undefined,
       }),
+      200,
+      csrfHeaders(cookie),
     );
   });
 
   /* -------------------------------------------------------------- connect */
 
-  app.get("/admin/connect", requireAdmin, (c) => {
+  app.get("/admin/connect", requireAdmin, async (c) => {
     const baseUrl = baseUrlFrom(c.req.raw, c.env);
+    const { token: csrf, cookie } = await issueCsrfToken(c.env, SESSION_CSRF_PURPOSE);
     return htmlResponse(
       connectPage({
         baseUrl,
+        csrf,
         error: c.req.query("error") ?? undefined,
         hint: c.req.query("hint") ?? undefined,
       }),
+      200,
+      csrfHeaders(cookie),
     );
   });
 
@@ -141,6 +157,9 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
   app.post("/admin/session", requireAdmin, async (c) => {
     const wantsJson = expectsJson(c.req.raw);
     const form = await readFormish(c.req.raw);
+    if (!(await verifyCsrfToken(c.req.raw, c.env, SESSION_CSRF_PURPOSE, form.csrf))) {
+      return connectCsrfFailure(c, wantsJson);
+    }
     const pasted = (form.session ?? "").trim();
 
     if (!pasted) {
@@ -185,8 +204,15 @@ export function adminPages(deps: AdminPagesDeps = {}): Hono<AdminEnv> {
   });
 
   app.post("/admin/session/clear", requireAdmin, async (c) => {
+    const wantsJson = expectsJson(c.req.raw);
+    const form = await readFormish(c.req.raw);
+    if (!(await verifyCsrfToken(c.req.raw, c.env, SESSION_CSRF_PURPOSE, form.csrf))) {
+      return wantsJson
+        ? csrfJsonFailure(c)
+        : dashboardCsrfFailure(c, await collectStatus(c.env, stubFor));
+    }
     await stubFor(c.env).clearSession();
-    if (expectsJson(c.req.raw)) return c.json({ ok: true, cleared: true }, 200);
+    if (wantsJson) return c.json({ ok: true, cleared: true }, 200);
     return c.redirect(
       `/admin?flash=${encodeURIComponent("Stored WeWork session cleared. It is not revoked upstream, sign out on members.wework.com too.")}`,
       303,
@@ -453,6 +479,54 @@ function normaliseScopes(values: readonly string[]): Scope[] {
   return KEY_SCOPES.filter((scope) => values.includes(scope));
 }
 
+/** What both session forms say when their token did not verify. */
+const CSRF_FAILURE = "That form expired or was submitted from another site. Try again.";
+
+/** The 403 a scripted caller gets when it posted without a token. */
+function csrfJsonFailure(c: { json: (body: unknown, status: 403) => Response }): Response {
+  return c.json(
+    {
+      error: {
+        code: "FORBIDDEN",
+        message: CSRF_FAILURE,
+        hint: "Load /admin/connect first, keep its ww_csrf cookie, and send the page's csrf token in the body.",
+      },
+    },
+    403,
+  );
+}
+
+/** Re-renders the connect page with an error banner and a fresh CSRF token. */
+async function connectCsrfFailure(
+  c: {
+    env: Env;
+    req: { raw: Request };
+    json: (body: unknown, status: 403) => Response;
+  },
+  wantsJson: boolean,
+): Promise<Response> {
+  if (wantsJson) return csrfJsonFailure(c);
+  const { token: csrf, cookie } = await issueCsrfToken(c.env, SESSION_CSRF_PURPOSE);
+  return htmlResponse(
+    connectPage({ baseUrl: baseUrlFrom(c.req.raw, c.env), csrf, error: CSRF_FAILURE }),
+    403,
+    csrfHeaders(cookie),
+  );
+}
+
+/** Re-renders the dashboard with an error banner and a fresh CSRF token. */
+async function dashboardCsrfFailure(
+  c: { env: Env; req: { raw: Request } },
+  status: AdminStatus,
+): Promise<Response> {
+  const { token: csrf, cookie } = await issueCsrfToken(c.env, SESSION_CSRF_PURPOSE);
+  return htmlResponse(
+    dashboardPage({ status, csrf, baseUrl: baseUrlFrom(c.req.raw, c.env), error: CSRF_FAILURE }),
+    403,
+    csrfHeaders(cookie),
+  );
+}
+
 /** Re-renders the key list with an error banner and a fresh CSRF token. */
 async function keysErrorPage(
   c: {
@@ -551,6 +625,8 @@ const NAV: Array<[string, string]> = [
 
 function dashboardPage(options: {
   status: AdminStatus;
+  /** Token for the "forget the stored session" form. */
+  csrf: string;
   baseUrl: string;
   flash?: string;
   error?: string;
@@ -656,6 +732,7 @@ ${keyValues([
     : []),
 ])}
 <form method="post" action="/admin/session/clear">
+<input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
 <button type="submit" class="quiet">Forget the stored session</button>
 </form>
 <p class="small muted">Forgetting it here does not sign you out of WeWork. To revoke it fully, sign out on members.wework.com too.</p>
@@ -684,7 +761,13 @@ ${keyValues([
   });
 }
 
-function connectPage(options: { baseUrl: string; error?: string; hint?: string }): string {
+function connectPage(options: {
+  baseUrl: string;
+  /** Token for the paste form. */
+  csrf: string;
+  error?: string;
+  hint?: string;
+}): string {
   const bookmarklet = bookmarkletSource(options.baseUrl);
   return page({
     title: "Connect WeWork",
@@ -715,6 +798,7 @@ entries your browser already stored (<code>localStorage</code> keys beginning
 <p>Paste and submit. The worker decodes the token for its expiry and your
 <code>https://wework.com/user_uuid</code> claim, then stores it.</p>
 <form method="post" action="/admin/session">
+<input type="hidden" name="csrf" value="${escapeHtml(options.csrf)}">
 <label for="session">Pasted session JSON (or a raw <code>{access_token, refresh_token, expires_in}</code> object, or a bare access token)</label>
 <textarea id="session" name="session" required spellcheck="false" autocomplete="off"
  placeholder='{"@@auth0spajs@@::...": "{\\"body\\":{\\"access_token\\":\\"eyJ...\\"}}"}'></textarea>
