@@ -30,6 +30,10 @@ npx wrangler deploy --dry-run --outdir dist
 
 GitHub Actions runs exactly those two commands (`.github/workflows/ci.yml`), on pull requests and on pushes to `main`, using the Node version in `.nvmrc`. It needs no secrets and it never deploys. Nothing else runs in CI, so a green check means your branch passes the same checks you just ran locally.
 
+## Location and time
+
+Anything touching buildings, dates, or offsets must keep the rules in [docs/LOCATION_AND_TIME.md](docs/LOCATION_AND_TIME.md) true, and a change to those rules updates that file in the same PR.
+
 ## Tests never hit the network
 
 Every upstream response used in tests lives in `test/fixtures/wework/*.json` and is served through the fetch stub in `test/helpers/fake-fetch.ts`. If a test needs the network, it is the wrong test. Durable Object behaviour is tested through `env.SESSION` with `@cloudflare/vitest-pool-workers`; end-to-end `/mcp` behaviour through `SELF.fetch`.

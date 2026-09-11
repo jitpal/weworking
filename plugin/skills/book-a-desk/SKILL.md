@@ -29,7 +29,7 @@ For "what do I have booked", just call `list_bookings`. For cancelling, call `li
 - **Never ask for WeWork passwords or tokens in chat.** Do not accept them if offered; if the user pastes one, tell them not to, tell them to rotate it by signing out on `members.wework.com`, and do not repeat it back. Credentials go to the Worker's `/admin/connect` page in a browser, nowhere else.
 - **On `SESSION_MISSING` or `SESSION_EXPIRED`**, stop and tell the user the deployment needs reconnecting: open `<worker-url>/admin/connect`, sign in with the admin password, and paste a fresh session from `members.wework.com`. The error's `hint` contains the exact URL. Do not retry until they say they have done it.
 - **On `CAP_EXCEEDED`**, stop and explain the cap in plain terms ("this deployment allows one booking per day and you have used it"). The cap is a deliberate safety limit set by whoever deployed the Worker, changeable in `wrangler.jsonc`. Do not look for a way around it.
-- **Times are local to the building.** Always quote local times to the user and never convert them into the user's own time zone without saying so.
+- **Times are local to the building.** Always quote local times to the user and never convert them into the user's own time zone without saying so. Future dates are fine; if a future date returns nothing, try a nearer one before concluding the building is unavailable.
 - **Quotes are opaque and short-lived** (about 10 minutes). Never edit one, never reuse one from an earlier search, never try to construct one. If it expired, search again.
 - **Never retry a failed booking automatically.** Reads are safe to retry once; writes are not.
 

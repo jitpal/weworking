@@ -49,6 +49,7 @@ import {
   mapWorkspace,
   normaliseUtcStamp,
   num,
+  offsetStringForZone,
   str,
   utcIsoToZonedWallClock,
 } from "./mappers";
@@ -374,7 +375,7 @@ export class WeWorkClient implements WeWorkApi {
     // (live-verified for New York). Known buildings come from the in-memory cache or
     // the durable store; an unknown one gets a first pass at +00:00 and a second at
     // the offset its own results reveal.
-    const knownOffset = args.locationOffset ?? (await this.#offsetFor(args.locationIds));
+    const knownOffset = args.locationOffset ?? (await this.#offsetFor(args.locationIds, args.date));
     let body = await this.#getSpacesRaw(args, knownOffset ?? "+00:00");
     if (knownOffset === undefined) {
       const revealed = this.#offsetRevealedBy(body);
@@ -761,18 +762,32 @@ export class WeWorkClient implements WeWorkApi {
   }
 
   /** The UTC offset to send with `get-spaces`, from any location we have seen. */
-  async #offsetFor(locationIds: string[]): Promise<string | undefined> {
+  /**
+   * The building's UTC offset *on the requested date*, so a search across a
+   * daylight-saving change sends the offset WeWork expects for that day rather than
+   * today's. Falls back to the stored offset when the zone is unknown.
+   */
+  async #offsetFor(locationIds: string[], date: string): Promise<string | undefined> {
+    const known = await this.#locationFor(locationIds);
+    if (!known) return undefined;
+    return (
+      offsetStringForZone(known.timezone, Date.parse(`${date}T12:00:00Z`)) ?? known.timezoneOffset
+    );
+  }
+
+  /** The first of these buildings we know, from memory or the durable store. */
+  async #locationFor(locationIds: string[]): Promise<Location | undefined> {
     for (const id of locationIds) {
-      const offset = this.#locations.get(id)?.timezoneOffset;
-      if (offset) return offset;
+      const cached = this.#locations.get(id);
+      if (cached) return cached;
     }
     if (!this.#locationStore) return undefined;
     for (const id of locationIds) {
       try {
         const stored = await this.#locationStore.get(id);
-        if (stored?.timezoneOffset) {
+        if (stored) {
           this.#locations.set(id, stored);
-          return stored.timezoneOffset;
+          return stored;
         }
       } catch (err) {
         console.warn("location store lookup failed", toErrorBody(err));

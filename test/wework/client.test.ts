@@ -154,6 +154,23 @@ describe("listCities", () => {
 });
 
 describe("listLocationsByCity", () => {
+  it("sends the building's offset for the requested date, not today's (DST)", async () => {
+    const fetchStub = createFakeFetch([
+      route("GET", `${MEMBERS_API}/wework-yardi/ondemand/get-locations-by-geo`, locationsByGeo),
+      route("GET", `${MEMBERS_API}/spaces/get-spaces`, spacesFixture),
+      route("GET", `${MEMBERS_API}/spaces/get-spaces`, spacesFixture),
+    ]);
+    const client = new WeWorkClient({ fetch: fetchStub, tokens: seededTokenStore(), now });
+    const [berlin] = await client.listLocationsByCity("Berlin");
+    if (!berlin) throw new Error("fixture has no location");
+    // Fixture zone is Europe/Berlin: +02:00 in September, +01:00 in December.
+    await client.getSpaces({ locationIds: [berlin.locationId], date: "2026-09-21" });
+    await client.getSpaces({ locationIds: [berlin.locationId], date: "2026-12-14" });
+    const calls = fetchStub.calls.filter((c) => c.url.includes("/spaces/get-spaces"));
+    expect(queryOf(calls[0]?.url ?? "").locationOffset).toBe("+02:00");
+    expect(queryOf(calls[1]?.url ?? "").locationOffset).toBe("+01:00");
+  });
+
   it("persists listed buildings to the location store and reads the offset back for get-spaces", async () => {
     const stored = new Map<string, import("../../src/core/types").Location>();
     const store = {

@@ -215,7 +215,7 @@ src/                Worker source
   mcp/              MCP server and tool definitions
   http/             REST API, OpenAPI, admin pages, healthz
 test/               vitest (workers pool) + scrubbed fixtures
-docs/               self-hosting, clients, API, threat model, capture guide
+docs/               self-hosting, clients, API, location and time rules, threat model, capture guide
 plugin/             Agent Plugin (plugin.json, mcp.json, skills/)
 scripts/            hash-token.mjs, record-fixture.mjs
 ```

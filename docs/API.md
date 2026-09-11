@@ -67,6 +67,10 @@ No parameters. Call this first if you do not know whether the deployment is conn
 
 `whoami` never returns a WeWork token. If `session.state` is `none` or `expired`, stop and tell the user to reconnect.
 
+### Places and times
+
+How buildings, dates, offsets, and daylight saving are handled is written down once in [LOCATION_AND_TIME.md](LOCATION_AND_TIME.md). The short version: agents speak building-local time, dates are the building's calendar date, future dates are allowed, and the server does every conversion.
+
 ### Credits or cash
 
 WeWork bills some memberships in monthly credits and others (such as "On Demand") in money. Every availability result carries both fields:
