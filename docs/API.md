@@ -271,12 +271,15 @@ Upstream stamps these times as `Z` even though they are local wall clock; the ma
 
 ## Admin routes
 
-Every route under `/admin` needs the signed admin cookie from `POST /admin/login` (`ADMIN_PASSWORD`). No agent credential opens them, whatever its scopes.
+Every route under `/admin` needs the signed admin cookie from `POST /admin/login` (`ADMIN_PASSWORD`). No agent credential opens them, whatever its scopes. The cookie is bound to the password that minted it, so changing `ADMIN_PASSWORD` ends every session.
+
+Every `POST` also needs the CSRF token from the page that renders its form, in a `csrf` field, alongside the `ww_csrf` cookie that page set. A scripted JSON caller does the same: `GET` the page first, keep the cookie, and send `csrf` in the body. Without the pair the answer is `403`.
 
 | Route | Purpose |
 | --- | --- |
 | `GET /admin/connect` | paste a WeWork session |
-| `POST /admin/session` | submit a session (form post or JSON body) |
+| `POST /admin/session` | submit a session (form post or JSON body), with a CSRF token |
+| `POST /admin/session/clear` | forget the stored session, with a CSRF token |
 | `GET /admin/keys` | list API keys, and the form that mints one |
 | `POST /admin/keys` | mint a key and display it once |
 | `POST /admin/keys/:id/revoke` | revoke a key |
