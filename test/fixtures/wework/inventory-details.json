@@ -1,0 +1,6 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "kubeSpaceId": "kube-space-from-inventory-0001"
+}

@@ -5,14 +5,15 @@
  * re-exported here so consumers can import it from the module that owns the
  * implementations.
  *
- * STATUS: scaffold. The session engineer adds `DurableObjectTokenStore` here — a
- * thin adapter that forwards each method to the corresponding `WeWorkSession` RPC.
+ * {@link DurableTokenStore} is the production implementation: a thin adapter that
+ * forwards each method to the corresponding `WeWorkSession` Durable Object RPC.
  * {@link MemoryTokenStore} below exists so unit tests for the WeWork client and the
  * booking service never need a Durable Object.
  */
 
 import type { SessionInfo, SessionRecord, TokenStore } from "../core/types";
 import { AppError } from "../errors";
+import type { WeWorkSession } from "./do";
 
 export type { SessionInfo, SessionRecord, TokenStore };
 
@@ -90,5 +91,51 @@ export class MemoryTokenStore implements TokenStore {
   /** Test-only accessor. Not part of {@link TokenStore}. */
   peek(): SessionRecord | undefined {
     return this.#record ? { ...this.#record } : undefined;
+  }
+}
+
+/**
+ * The production {@link TokenStore}: a thin adapter over the `WeWorkSession` Durable
+ * Object's RPC surface.
+ *
+ * It holds no state of its own — every call crosses to the Durable Object, which is
+ * where the refresh mutex, the stored record and the audit trail live. One is built
+ * per request by `src/index.ts` and handed to the `WeWorkClient`.
+ *
+ * @example
+ * const tokens = new DurableTokenStore(getSessionStub(env));
+ * const client = new WeWorkClient({ fetch, tokens });
+ */
+export class DurableTokenStore implements TokenStore {
+  readonly #stub: DurableObjectStub<WeWorkSession>;
+
+  constructor(stub: DurableObjectStub<WeWorkSession>) {
+    this.#stub = stub;
+  }
+
+  /**
+   * @param opts.forceRefresh set by the client after an upstream 401 — maps to the
+   * Durable Object's `force` flag, which bypasses the stored token entirely.
+   */
+  async getAccessToken(opts?: { forceRefresh?: boolean }): Promise<{
+    accessToken: string;
+    userUuid: string;
+  }> {
+    const { accessToken, userUuid } = await this.#stub.getAccessToken({
+      force: opts?.forceRefresh === true,
+    });
+    return { accessToken, userUuid };
+  }
+
+  async getSessionInfo(): Promise<SessionInfo> {
+    return await this.#stub.getSessionInfo();
+  }
+
+  async setSession(rec: Omit<SessionRecord, "obtainedAt">): Promise<void> {
+    await this.#stub.setSession(rec);
+  }
+
+  async clear(): Promise<void> {
+    await this.#stub.clearSession();
   }
 }

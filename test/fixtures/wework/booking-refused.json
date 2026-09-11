@@ -1,0 +1,10 @@
+{
+  "BookingStatus": "BookingFailed",
+  "ReservationID": "",
+  "Errors": [
+    {
+      "Code": "INSUFFICIENT_CREDITS",
+      "Message": "You do not have enough credits remaining for this booking."
+    }
+  ]
+}

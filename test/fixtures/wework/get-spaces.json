@@ -1,0 +1,119 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "getSharedWorkspaces": {
+    "totalCount": 3,
+    "workspaces": [
+      {
+        "uuid": "bbbb2222-0000-4000-8000-000000000001",
+        "inventoryUuid": "cccc3333-0000-4000-8000-000000000001",
+        "name": "Shared Workspace, Floor 4",
+        "capacity": 1,
+        "credits": 10,
+        "openTime": "9:00",
+        "closeTime": "18:30",
+        "seat": {
+          "total": 12,
+          "available": 5,
+          "booked": 7
+        },
+        "reservable": {
+          "KubeId": "kube-space-0001",
+          "Id": 9001
+        },
+        "location": {
+          "uuid": "aaaa1111-0000-4000-8000-000000000001",
+          "accountType": 2,
+          "sourceType": 1,
+          "timeZone": "Europe/Berlin",
+          "timezoneOffset": "+02:00",
+          "address": {
+            "line1": "100 Example Street",
+            "line2": "Floor 4",
+            "city": "Berlin",
+            "state": "Berlin",
+            "country": "Germany",
+            "countryCode": "DE",
+            "zip": "10000",
+            "latitude": 52.52,
+            "longitude": 13.405
+          },
+          "city": "Berlin",
+          "countryCode": "DE"
+        },
+        "spaceType": 0
+      },
+      {
+        "uuid": "bbbb2222-0000-4000-8000-000000000002",
+        "inventoryUuid": "cccc3333-0000-4000-8000-000000000002",
+        "name": "Hot Desk Lounge",
+        "capacity": 2,
+        "credits": 8,
+        "openTime": "8:0",
+        "closeTime": "20:00",
+        "seat": {
+          "total": 20,
+          "available": 3,
+          "booked": 17
+        },
+        "reservable": {},
+        "location": {
+          "uuid": "aaaa1111-0000-4000-8000-000000000002",
+          "accountType": 4,
+          "sourceType": 2,
+          "timeZone": "Europe/Berlin",
+          "timezoneOffset": "+02:00",
+          "address": {
+            "line1": "200 Sample Avenue",
+            "city": "Berlin",
+            "state": "Berlin",
+            "country": "Germany",
+            "countryCode": "DE",
+            "zip": "10001",
+            "latitude": 52.5,
+            "longitude": 13.45
+          },
+          "city": "Berlin",
+          "countryCode": "DE"
+        },
+        "spaceType": 0
+      },
+      {
+        "uuid": "bbbb2222-0000-4000-8000-000000000003",
+        "inventoryUuid": "cccc3333-0000-4000-8000-000000000003",
+        "name": "Quiet Room Desks",
+        "capacity": 4,
+        "credits": 15,
+        "openTime": "8:0",
+        "closeTime": "20:00",
+        "seat": {
+          "total": 4,
+          "available": 0,
+          "booked": 4
+        },
+        "reservable": {},
+        "location": {
+          "uuid": "aaaa1111-0000-4000-8000-000000000002",
+          "accountType": 4,
+          "sourceType": 2,
+          "timeZone": "Europe/Berlin",
+          "timezoneOffset": "+02:00",
+          "address": {
+            "line1": "200 Sample Avenue",
+            "city": "Berlin",
+            "state": "Berlin",
+            "country": "Germany",
+            "countryCode": "DE",
+            "zip": "10001",
+            "latitude": 52.5,
+            "longitude": 13.45
+          },
+          "city": "Berlin",
+          "countryCode": "DE"
+        },
+        "spaceType": 0
+      }
+    ]
+  }
+}

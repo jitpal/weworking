@@ -1,0 +1,12 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "uuid": "11111111-2222-4333-8444-555555555555",
+  "email": "not-a-real-member@example.invalid",
+  "name": "Testy Example",
+  "firstName": "Testy",
+  "lastName": "Example",
+  "membershipType": "WeWork All Access",
+  "homeLocationUUID": "aaaa1111-0000-4000-8000-000000000001"
+}

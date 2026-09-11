@@ -190,6 +190,8 @@ export function offsetString(instantMs: number, tz: string): string {
  * occurrence; non-existent times (the skipped hour when clocks go forward) resolve
  * forward past the gap, exactly as a calendar app does.
  *
+ * @example localToUtcIso("2026-09-21", "09:00", "Europe/London") // "2026-09-21T08:00:00Z"
+ *
  * @param date local calendar date `"YYYY-MM-DD"`
  * @param time local wall clock `"HH:MM"`
  * @param tz IANA zone name
@@ -212,10 +214,30 @@ export function localToUtcMs(date: string, time: string, tz: string): number {
   const wallAsUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
 
   // Pass 1: offset read at the wall-clock value taken as UTC.
-  let candidate = wallAsUtc - tzOffsetMinutes(wallAsUtc, tz) * MINUTE_MS;
-  // Pass 2: offset read at the candidate instant (fixes DST boundaries).
-  candidate = wallAsUtc - tzOffsetMinutes(candidate, tz) * MINUTE_MS;
-  return candidate;
+  const offsetGuess = tzOffsetMinutes(wallAsUtc, tz);
+  const first = wallAsUtc - offsetGuess * MINUTE_MS;
+  // Pass 2: offset read at the candidate instant. Away from a transition the two
+  // agree and we are done.
+  const offsetAtFirst = tzOffsetMinutes(first, tz);
+  if (offsetAtFirst === offsetGuess) return first;
+
+  // Within an hour of a transition the two offsets differ, so there are two
+  // candidates and at most one of them actually shows the requested wall clock.
+  const second = wallAsUtc - offsetAtFirst * MINUTE_MS;
+  const firstMatches = showsWallClock(first, tz, wallAsUtc);
+  const secondMatches = showsWallClock(second, tz, wallAsUtc);
+  if (firstMatches && secondMatches) return Math.min(first, second); // ambiguous: first occurrence
+  if (firstMatches) return first;
+  if (secondMatches) return second;
+  // Neither: the wall clock does not exist (the skipped hour). Resolve forward past
+  // the gap, which is what a calendar app does with "02:30" on a spring-forward day.
+  return Math.max(first, second);
+}
+
+/** True when `instantMs`, rendered in `tz`, shows exactly the wall clock encoded in `wallAsUtc`. */
+function showsWallClock(instantMs: number, tz: string, wallAsUtc: number): boolean {
+  const p = zonedParts(instantMs, tz);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, 0) === wallAsUtc;
 }
 
 /** The local view of a UTC instant: calendar date, wall-clock time, and a human label. */
@@ -237,7 +259,10 @@ export interface LocalInstant {
 export function utcToLocal(isoUtcInstant: string, tz: string): LocalInstant {
   const ms = Date.parse(isoUtcInstant);
   if (Number.isNaN(ms)) {
-    throw new AppError("VALIDATION", "Expected an ISO-8601 UTC instant such as 2026-09-21T08:00:00Z.");
+    throw new AppError(
+      "VALIDATION",
+      "Expected an ISO-8601 UTC instant such as 2026-09-21T08:00:00Z.",
+    );
   }
   const p = zonedParts(ms, tz);
   return {
@@ -345,7 +370,8 @@ export function isoWeekKey(date: string): string {
   target.setUTCDate(target.getUTCDate() + 4 - weekday);
   const isoYear = target.getUTCFullYear();
   const firstThursday = Date.UTC(isoYear, 0, 4);
-  const firstWeekday = new Date(firstThursday).getUTCDay() === 0 ? 7 : new Date(firstThursday).getUTCDay();
+  const firstWeekday =
+    new Date(firstThursday).getUTCDay() === 0 ? 7 : new Date(firstThursday).getUTCDay();
   const week1Monday = firstThursday - (firstWeekday - 1) * DAY_MS;
   const week = Math.round((target.getTime() - week1Monday) / (7 * DAY_MS)) + 1;
   return `${isoYear}-W${pad2(week)}`;
@@ -382,7 +408,10 @@ export function localLabel(instantMs: number, tz: string): string {
   const get = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((part) => part.type === type)?.value ?? "";
   const weekday = get("weekday").replace(/,$/, "");
-  return `${weekday} ${get("day")} ${get("month")} ${get("hour")}:${get("minute")}`;
+  // en-GB renders September as "Sept"; trimming to three letters keeps every month the
+  // same width, which is what docs/API.md's example summaries show.
+  const month = get("month").slice(0, 3);
+  return `${weekday} ${get("day")} ${month} ${get("hour")}:${get("minute")}`;
 }
 
 /**

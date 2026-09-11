@@ -1,0 +1,7 @@
+{
+  "responseStatus": {
+    "type": "error",
+    "title": "Booking unavailable",
+    "message": "This workspace is not available for the selected time."
+  }
+}

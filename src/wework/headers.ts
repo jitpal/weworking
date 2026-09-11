@@ -88,8 +88,7 @@ export function weworkHeaders(args: WeWorkHeaderArgs): Record<string, string> {
     WeWorkAuth: bearer,
     WeWorkUUID: args.userUuid,
     WeWorkMemberType: WEWORK_MEMBER_TYPE,
-    "Request-Source":
-      variant === "cancel" ? REQUEST_SOURCE_MEMBER_WEB : REQUEST_SOURCE_ONDEMAND,
+    "Request-Source": variant === "cancel" ? REQUEST_SOURCE_MEMBER_WEB : REQUEST_SOURCE_ONDEMAND,
     "fe-pg": variant === "cancel" ? FE_PG_YOUR_BOOKINGS : FE_PG_DASHBOARD,
     Origin: MEMBERS_ORIGIN,
     Referer: `${MEMBERS_ORIGIN}/`,

@@ -1,0 +1,60 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "locationsByGeo": [
+    {
+      "uuid": "aaaa1111-0000-4000-8000-000000000001",
+      "name": "Fake Tower",
+      "address": {
+        "line1": "100 Example Street",
+        "line2": "Floor 4",
+        "city": "Berlin",
+        "state": "Berlin",
+        "country": "Germany",
+        "countryCode": "DE",
+        "zip": "10000",
+        "latitude": 52.52,
+        "longitude": 13.405
+      },
+      "city": "Berlin",
+      "country": "Germany",
+      "countryCode": "DE",
+      "latitude": 52.52,
+      "longitude": 13.405,
+      "timeZone": "Europe/Berlin",
+      "timezoneOffset": "+02:00",
+      "accountType": 2,
+      "sourceType": 1,
+      "openTime": "9:00",
+      "closeTime": "18:30",
+      "isOpen": true
+    },
+    {
+      "uuid": "aaaa1111-0000-4000-8000-000000000002",
+      "name": "Placeholder Works",
+      "address": {
+        "line1": "200 Sample Avenue",
+        "city": "Berlin",
+        "state": "Berlin",
+        "country": "Germany",
+        "countryCode": "DE",
+        "zip": "10001",
+        "latitude": 52.5,
+        "longitude": 13.45
+      },
+      "city": "Berlin",
+      "country": "Germany",
+      "countryCode": "DE",
+      "latitude": 52.5,
+      "longitude": 13.45,
+      "timeZone": "Europe/Berlin",
+      "timezoneOffset": "+02:00",
+      "accountType": 4,
+      "sourceType": 2,
+      "openTime": "8:0",
+      "closeTime": "20:00",
+      "isOpen": true
+    }
+  ]
+}

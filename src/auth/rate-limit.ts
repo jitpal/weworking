@@ -42,11 +42,7 @@ function prune(key: string, now: number): number[] {
 }
 
 /** How long the caller must wait, in seconds; `0` when it is not limited. */
-export function rateLimitRetryAfter(
-  bucket: string,
-  ip: string,
-  now: number = Date.now(),
-): number {
+export function rateLimitRetryAfter(bucket: string, ip: string, now: number = Date.now()): number {
   const recent = prune(`${bucket}:${ip}`, now);
   if (recent.length < MAX_FAILURES) return 0;
   const oldest = recent[0] ?? now;

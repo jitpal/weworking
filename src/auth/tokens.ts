@@ -14,9 +14,9 @@
  */
 
 import { z } from "zod";
+import type { Actor, Scope } from "../core/types";
 import type { Env, StaticTokenConfig } from "../env";
 import { redact } from "../redact";
-import type { Actor, Scope } from "../core/types";
 
 /** The three scopes this deployment understands. `admin` implies the other two. */
 export const SCOPES: readonly Scope[] = ["read", "write", "admin"] as const;

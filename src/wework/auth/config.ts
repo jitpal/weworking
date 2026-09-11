@@ -108,7 +108,8 @@ export function normaliseConfig(body: unknown): Auth0Config | undefined {
   const record = body as Record<string, unknown>;
   // Some deployments nest the payload under `data` or `result`.
   const inner = pickObject(record.data) ?? pickObject(record.result) ?? record;
-  const params = pickObject(inner.authorizationParams) ?? pickObject(inner.authorizationParam) ?? {};
+  const params =
+    pickObject(inner.authorizationParams) ?? pickObject(inner.authorizationParam) ?? {};
 
   const domain = normaliseDomain(str(inner.domain) ?? str(inner.auth0Domain));
   const clientId = str(inner.clientId) ?? str(inner.client_id);

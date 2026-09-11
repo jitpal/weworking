@@ -29,9 +29,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { CapsRemaining, SessionInfo, SessionRecord } from "../core/types";
 import { type Config, type Env, parseConfig } from "../env";
 import { AppError } from "../errors";
-import { redact, REDACTED } from "../redact";
-// TEMP: replace with "../wework/auth" at integration — see src/session/_auth-shim.ts.
-import { createHeadlessLoginStrategy, refreshSession } from "./_auth-shim";
+import { REDACTED, redact } from "../redact";
+import { createHeadlessLoginStrategy, refreshSession } from "../wework/auth";
 import { REFRESH_WINDOW_MS } from "./token-store";
 
 /** The Durable Object id every request uses in phase 1 (single WeWork account). */
@@ -55,6 +54,21 @@ export const AUDIT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 /** Ledger statuses that consume a cap slot. */
 const ACTIVE_STATUSES = "('reserved','confirmed')";
 
+/**
+ * A JSON value, unrolled to a fixed depth instead of being defined recursively.
+ *
+ * Two constraints meet here. Durable Object RPC maps an `unknown` return type to
+ * `never` (the `Rpc.Serializable` conditional has no branch for it), which would make
+ * `listAudit()` and `idempotencyGet()` unusable from the worker side; a *recursive*
+ * JSON type instead trips TypeScript's "type instantiation is excessively deep" guard
+ * inside the same mapper. Four levels covers every redacted tool argument and booking
+ * result this project stores.
+ */
+type Json1 = string | number | boolean | null;
+type Json2 = Json1 | Json1[] | { [key: string]: Json1 };
+type Json3 = Json2 | Json2[] | { [key: string]: Json2 };
+export type JsonValue = Json3 | Json3[] | { [key: string]: Json3 };
+
 /** Outcome of {@link WeWorkSession.reserveBooking}. */
 export type ReserveBookingResult =
   | { ok: true; capsRemaining: CapsRemaining }
@@ -66,7 +80,7 @@ export interface AuditEntry {
   ts: string;
   actor: string;
   tool: string;
-  args: unknown;
+  args?: JsonValue;
   outcome: string;
   bookingId?: string;
   credits?: number;
@@ -282,14 +296,18 @@ export class WeWorkSession extends DurableObject<Env> {
   async confirmBooking(args: { bookingKey: string; bookingId: string }): Promise<void> {
     const bookingKey = requireText(args.bookingKey, "bookingKey");
     const bookingId = requireText(args.bookingId, "bookingId");
-    const cursor = this.#sql.exec(
+    const found = this.#count(
+      "SELECT COUNT(*) AS n FROM bookings_ledger WHERE booking_key = ?",
+      bookingKey,
+    );
+    this.#sql.exec(
       `UPDATE bookings_ledger SET booking_id = ?, status = 'confirmed', confirmed_at = ?
         WHERE booking_key = ?`,
       bookingId,
       this.now(),
       bookingKey,
     );
-    if (cursor.rowsWritten === 0) {
+    if (found === 0) {
       // The reservation was pruned (or never made). Never fail a *successful* booking
       // over bookkeeping: record it so the caps and the audit trail stay honest.
       console.warn("session: confirmBooking had no reservation to promote", { bookingKey });
@@ -321,7 +339,7 @@ export class WeWorkSession extends DurableObject<Env> {
   // ------------------------------------------------------------ idempotency
 
   /** Returns a stored result for `key`, or `undefined` when absent or expired. */
-  async idempotencyGet(key: string): Promise<unknown | undefined> {
+  async idempotencyGet(key: string): Promise<JsonValue | undefined> {
     const row = this.#sql
       .exec<{ result_json: string; expires_at: number }>(
         "SELECT result_json, expires_at FROM idempotency WHERE key = ?",
@@ -333,7 +351,7 @@ export class WeWorkSession extends DurableObject<Env> {
       this.#sql.exec("DELETE FROM idempotency WHERE key = ?", key);
       return undefined;
     }
-    return JSON.parse(row.result_json) as unknown;
+    return JSON.parse(row.result_json) as JsonValue;
   }
 
   /** Stores `value` (JSON) under `key` for `ttlSec` seconds (default 24h). */
@@ -361,7 +379,7 @@ export class WeWorkSession extends DurableObject<Env> {
       this.now(),
       entry.actor ?? "unknown",
       entry.tool ?? "unknown",
-      JSON.stringify(scrubArgs(entry.args)),
+      entry.args === undefined ? null : JSON.stringify(scrubArgs(entry.args)),
       entry.outcome,
       entry.bookingId ?? null,
       entry.credits ?? null,
@@ -386,10 +404,12 @@ export class WeWorkSession extends DurableObject<Env> {
         ts: new Date(row.ts).toISOString(),
         actor: row.actor,
         tool: row.tool,
-        args: row.args_redacted === null ? undefined : (JSON.parse(row.args_redacted) as unknown),
         outcome: row.outcome,
         dryRun: row.dry_run === 1,
       };
+      if (row.args_redacted !== null) {
+        entry.args = JSON.parse(row.args_redacted) as JsonValue;
+      }
       if (row.booking_id !== null) entry.bookingId = row.booking_id;
       if (row.credits !== null) entry.credits = row.credits;
       if (row.error !== null) entry.error = row.error;
@@ -413,7 +433,7 @@ export class WeWorkSession extends DurableObject<Env> {
     let refreshed = false;
     let error: string | undefined;
 
-    if (row && row.refresh_token && row.expires_at - now < REFRESH_WINDOW_MS) {
+    if (row?.refresh_token && row.expires_at - now < REFRESH_WINDOW_MS) {
       try {
         this.#persist(await this.#refresh(row));
         refreshed = true;
@@ -423,10 +443,11 @@ export class WeWorkSession extends DurableObject<Env> {
     }
 
     const pruned =
-      this.#prune("DELETE FROM idempotency WHERE expires_at <= ?", now) +
-      this.#prune("DELETE FROM audit WHERE ts < ?", now - AUDIT_RETENTION_MS) +
+      this.#prune("idempotency", "expires_at <= ?", now) +
+      this.#prune("audit", "ts < ?", now - AUDIT_RETENTION_MS) +
       this.#prune(
-        "DELETE FROM bookings_ledger WHERE status = 'reserved' AND created_at < ?",
+        "bookings_ledger",
+        "status = 'reserved' AND created_at < ?",
         now - STALE_RESERVATION_MS,
       );
 
@@ -646,14 +667,15 @@ export class WeWorkSession extends DurableObject<Env> {
     return this.#sql.exec<CountRow>(query, ...bindings).one().n;
   }
 
-  #prune(query: string, cutoff: number): number {
-    const table = query.split(" ")[2];
-    const before = this.#count(
-      `SELECT COUNT(*) AS n FROM ${table} WHERE ${query.split("WHERE ")[1] ?? "1=1"}`,
-      cutoff,
-    );
-    if (before > 0) this.#sql.exec(query, cutoff);
-    return before;
+  /**
+   * Deletes the rows of `table` matching `where` and returns how many went.
+   *
+   * `table` and `where` are literals from this module only — never caller input.
+   */
+  #prune(table: string, where: string, cutoff: number): number {
+    const doomed = this.#count(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`, cutoff);
+    if (doomed > 0) this.#sql.exec(`DELETE FROM ${table} WHERE ${where}`, cutoff);
+    return doomed;
   }
 }
 

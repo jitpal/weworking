@@ -1,0 +1,9 @@
+{
+  "domain": "idp.wework.com",
+  "clientId": "zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu",
+  "authorizationParams": {
+    "scope": "openid profile email offline_access",
+    "audience": "wework",
+    "redirect_uri": "https://members.wework.com/workplaceone/api/auth0/v2/callback?domain=members.wework.com/workplaceone"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "totalCredits": 60,
+  "remainingCredits": 42,
+  "usedCredits": 18,
+  "startDate": "2026-09-01",
+  "endDate": "2026-09-30"
+}

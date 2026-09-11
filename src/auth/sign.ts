@@ -28,10 +28,9 @@ export interface SignedClaims {
 
 /** Imports a signing key. Hex (the documented format for our secrets) is decoded; anything else is used as UTF-8 bytes. */
 async function importKey(key: string): Promise<CryptoKey> {
-  const raw = /^[0-9a-fA-F]+$/.test(key) && key.length % 2 === 0 ? hexToBytes(key) : encoder.encode(key);
-  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const raw =
+    /^[0-9a-fA-F]+$/.test(key) && key.length % 2 === 0 ? hexToBytes(key) : encoder.encode(key);
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
 function hexToBytes(hex: string): Uint8Array {

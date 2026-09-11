@@ -1,0 +1,11 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "grandTotal": {
+    "creditRatio": 1.5,
+    "credits": 10,
+    "total": 0,
+    "currency": "com.wework.credits"
+  }
+}

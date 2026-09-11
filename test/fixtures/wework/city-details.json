@@ -1,0 +1,22 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "cityDetails": [
+    {
+      "city": "Berlin",
+      "country": "Germany",
+      "countryCode": "DE"
+    },
+    {
+      "city": "Lisbon",
+      "country": "Portugal",
+      "countryCode": "PT"
+    },
+    {
+      "city": "berlin",
+      "country": "Germany",
+      "countryCode": "DE"
+    }
+  ]
+}

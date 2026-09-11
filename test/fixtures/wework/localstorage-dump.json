@@ -1,0 +1,28 @@
+{
+  "@@auth0spajs@@::zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu::wework::openid profile email offline_access": {
+    "body": {
+      "client_id": "zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu",
+      "audience": "wework",
+      "scope": "openid profile email offline_access",
+      "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkZBS0VfS0lEX05PVF9BX1JFQUxfS0VZIn0.eyJpc3MiOiJodHRwczovL2lkcC53ZXdvcmsuY29tLyIsInN1YiI6ImF1dGgwfDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsImF1ZCI6WyJ3ZXdvcmsiLCJodHRwczovL2lkcC53ZXdvcmsuY29tL3VzZXJpbmZvIl0sImlhdCI6MTc4OTkyNzIwMCwiZXhwIjoxNzg5OTcwNDAwLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIG9mZmxpbmVfYWNjZXNzIiwiYXpwIjoiekU1MUVwN0Z0dGxtdFFWNlpFR3lKS3NZMmpEMUV0QXUiLCJodHRwczovL3dld29yay5jb20vdXNlcl91dWlkIjoiMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1IiwiaHR0cHM6Ly93ZXdvcmsuY29tL2VtYWlsIjoibm90LWEtcmVhbC1tZW1iZXJAZXhhbXBsZS5pbnZhbGlkIn0.FAKE-SIGNATURE-THIS-TOKEN-IS-SYNTHETIC-AND-UNVERIFIABLE",
+      "refresh_token": "FAKE-REFRESH-TOKEN-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkZBS0VfS0lEX05PVF9BX1JFQUxfS0VZIn0.eyJpc3MiOiJodHRwczovL2lkcC53ZXdvcmsuY29tLyIsInN1YiI6ImF1dGgwfDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsImF1ZCI6InpFNTFFcDdGdHRsbXRRVjZaRUd5SktzWTJqRDFFdEF1IiwiaWF0IjoxNzg5OTI3MjAwLCJleHAiOjE3ODk5NzA0MDAsIm5vbmNlIjoiRkFLRS1OT05DRSIsImVtYWlsIjoibm90LWEtcmVhbC1tZW1iZXJAZXhhbXBsZS5pbnZhbGlkIiwibmFtZSI6IlRlc3R5IEV4YW1wbGUifQ.FAKE-SIGNATURE-THIS-TOKEN-IS-SYNTHETIC-AND-UNVERIFIABLE",
+      "token_type": "Bearer",
+      "expires_in": 43200
+    },
+    "expiresAt": 1789970400
+  },
+  "@@auth0spajs@@::zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu::https://idp.wework.com/userinfo::openid profile email": {
+    "body": {
+      "client_id": "zE51Ep7FttlmtQV6ZEGyJKsY2jD1EtAu",
+      "audience": "https://idp.wework.com/userinfo",
+      "scope": "openid profile email",
+      "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkZBS0VfS0lEX05PVF9BX1JFQUxfS0VZIn0.eyJpc3MiOiJodHRwczovL2lkcC53ZXdvcmsuY29tLyIsInN1YiI6ImF1dGgwfDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsImF1ZCI6WyJ3ZXdvcmsiXSwiaWF0IjoxNzg5ODQwODAwLCJleHAiOjE3ODk4ODQwMDAsInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwgb2ZmbGluZV9hY2Nlc3MiLCJhenAiOiJ6RTUxRXA3RnR0bG10UVY2WkVHeUpLc1kyakQxRXRBdSIsImh0dHBzOi8vd2V3b3JrLmNvbS91c2VyX3V1aWQiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUifQ.FAKE-SIGNATURE-THIS-TOKEN-IS-SYNTHETIC-AND-UNVERIFIABLE",
+      "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkZBS0VfS0lEX05PVF9BX1JFQUxfS0VZIn0.eyJpc3MiOiJodHRwczovL2lkcC53ZXdvcmsuY29tLyIsInN1YiI6ImF1dGgwfDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsImF1ZCI6InpFNTFFcDdGdHRsbXRRVjZaRUd5SktzWTJqRDFFdEF1IiwiaWF0IjoxNzg5OTI3MjAwLCJleHAiOjE3ODk5NzA0MDAsIm5vbmNlIjoiRkFLRS1OT05DRSIsImVtYWlsIjoibm90LWEtcmVhbC1tZW1iZXJAZXhhbXBsZS5pbnZhbGlkIiwibmFtZSI6IlRlc3R5IEV4YW1wbGUifQ.FAKE-SIGNATURE-THIS-TOKEN-IS-SYNTHETIC-AND-UNVERIFIABLE",
+      "token_type": "Bearer",
+      "expires_in": 43200
+    },
+    "expiresAt": 1789884000
+  },
+  "some.unrelated.localstorage.key": "ignore me"
+}

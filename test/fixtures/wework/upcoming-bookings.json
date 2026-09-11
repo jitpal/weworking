@@ -1,0 +1,78 @@
+{
+  "responseStatus": {
+    "type": "success"
+  },
+  "bookings": [
+    {
+      "uuid": "dddd4444-0000-4000-8000-000000000001",
+      "reservationId": "RSV-FAKE-0001",
+      "startTime": "2026-09-22T09:00:00Z",
+      "endTime": "2026-09-22T17:00:00Z",
+      "cancellationDeadline": "2026-09-22T08:00:00Z",
+      "credits": 10,
+      "status": "Booked",
+      "reservableId": "eeee5555-0000-4000-8000-000000000001",
+      "spaceId": "bbbb2222-0000-4000-8000-000000000001",
+      "isBookingApprovalOn": false,
+      "bookingType": 4,
+      "locationId": "aaaa1111-0000-4000-8000-000000000001",
+      "locationName": "Fake Tower",
+      "spaceName": "Shared Workspace, Floor 4",
+      "timeZone": "Europe/Berlin",
+      "location": {
+        "uuid": "aaaa1111-0000-4000-8000-000000000001",
+        "accountType": 2,
+        "sourceType": 1,
+        "timeZone": "Europe/Berlin",
+        "timezoneOffset": "+02:00",
+        "address": {
+          "line1": "100 Example Street",
+          "line2": "Floor 4",
+          "city": "Berlin",
+          "state": "Berlin",
+          "country": "Germany",
+          "countryCode": "DE",
+          "zip": "10000",
+          "latitude": 52.52,
+          "longitude": 13.405
+        },
+        "city": "Berlin",
+        "countryCode": "DE"
+      }
+    },
+    {
+      "uuid": "dddd4444-0000-4000-8000-000000000002",
+      "reservationId": "RSV-FAKE-0002",
+      "startTime": "2026-09-25T08:00:00Z",
+      "endTime": "2026-09-25T20:00:00Z",
+      "credits": 8,
+      "status": "Booked",
+      "reservableId": "eeee5555-0000-4000-8000-000000000002",
+      "spaceId": "bbbb2222-0000-4000-8000-000000000002",
+      "isBookingApprovalOn": false,
+      "bookingType": 4,
+      "locationId": "aaaa1111-0000-4000-8000-000000000002",
+      "locationName": "Placeholder Works",
+      "timeZone": "Europe/Berlin",
+      "location": {
+        "uuid": "aaaa1111-0000-4000-8000-000000000002",
+        "accountType": 4,
+        "sourceType": 2,
+        "timeZone": "Europe/Berlin",
+        "timezoneOffset": "+02:00",
+        "address": {
+          "line1": "200 Sample Avenue",
+          "city": "Berlin",
+          "state": "Berlin",
+          "country": "Germany",
+          "countryCode": "DE",
+          "zip": "10001",
+          "latitude": 52.5,
+          "longitude": 13.45
+        },
+        "city": "Berlin",
+        "countryCode": "DE"
+      }
+    }
+  ]
+}
