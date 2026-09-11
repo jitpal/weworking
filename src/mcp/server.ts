@@ -95,7 +95,7 @@ export interface MountMcpOptions {
   /**
    * The 401 to send when `resolveActor` returns `null`. Must carry
    * `WWW-Authenticate: Bearer resource_metadata="<base>/.well-known/oauth-protected-resource"`
-   * so MCP clients can discover the OAuth server (build spec §8).
+   * so MCP clients can discover the OAuth server.
    */
   unauthorized: (req: Request, env: Env) => Response | Promise<Response>;
   /** Defaults to {@link MCP_ROUTE}. */

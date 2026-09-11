@@ -8,7 +8,7 @@
  * `structuredContent` are the same bytes — and it means scope checks, validation and
  * summaries cannot drift between the two front doors.
  *
- * Naming, per build spec §11.4: **requests are `snake_case`** (query strings and JSON
+ * Naming: **requests are `snake_case`** (query strings and JSON
  * bodies alike), **responses are `camelCase`**. A URL only carries strings, so query
  * parameters go through `coerceQuery()` before validation.
  *

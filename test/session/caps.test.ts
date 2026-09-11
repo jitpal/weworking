@@ -12,7 +12,8 @@ import { describe, expect, it, vi } from "vitest";
 import { isoWeekKey, STALE_RESERVATION_MS } from "../../src/session/do";
 import { freshSession, patchConfig, queryCount, rejection, setClock } from "./helpers";
 
-vi.mock("../../src/wework/auth", () => ({
+vi.mock("../../src/wework/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/wework/auth")>()),
   createHeadlessLoginStrategy: () => ({
     name: "headless" as const,
     login: () => Promise.reject(new Error("no login in ledger tests")),

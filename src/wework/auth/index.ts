@@ -3,7 +3,7 @@
  *
  * The session Durable Object imports only from here (`../wework/auth`), so the
  * internals — the cookie jar, the PKCE helpers, the token-endpoint wrapper — stay
- * free to change without touching another engineer's module.
+ * free to change without touching anything outside this directory.
  *
  * Three ways to get a session, in decreasing order of reliability:
  *

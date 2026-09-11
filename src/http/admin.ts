@@ -22,9 +22,6 @@
  */
 
 import { Hono } from "hono";
-// Re-exports `parseManualSession` from src/wework/auth (§11.1); the indirection is
-// the seam the admin tests mock.
-import { parseManualSession } from "../auth/_manual-shim";
 import {
   type AdminEnv,
   csrfHeaders,
@@ -40,9 +37,10 @@ import { type Config, type Env, parseConfig } from "../env";
 import { isAppError, toErrorBody } from "../errors";
 import type { ApiKeySummary } from "../session/do";
 import { getSessionStub } from "../session/do";
+import { parseManualSession } from "../wework/auth";
 import { banner, escapeHtml, htmlResponse, keyValues, page } from "./admin-html";
 
-/** One audit row as `WeWorkSession.listAudit()` returns it (§11.2). */
+/** One audit row as `WeWorkSession.listAudit()` returns it. */
 export interface AuditRow {
   id: number;
   ts: string;
@@ -83,7 +81,7 @@ export interface AdminSessionStub {
 export interface AdminPagesDeps {
   /** Resolves the session Durable Object stub. */
   sessionStub?: (env: Env) => AdminSessionStub;
-  /** Parses whatever the operator pasted (§11.1 `parseManualSession`). */
+  /** Parses whatever the operator pasted. Defaults to `parseManualSession`. */
   parseSession?: (input: string | object, now?: () => number) => Omit<SessionRecord, "obtainedAt">;
 }
 
@@ -328,8 +326,8 @@ interface AdminStatus {
 }
 
 function defaultSessionStub(env: Env): AdminSessionStub {
-  // The DO's RPC surface (§11.2) is a superset of what these pages use; the cast
-  // keeps the admin module independent of the session module's type evolution.
+  // The DO's RPC surface is a superset of what these pages use; the cast keeps the
+  // admin module independent of the session module's type evolution.
   return getSessionStub(env) as unknown as AdminSessionStub;
 }
 
@@ -799,10 +797,10 @@ mint a new one and revoke the old one if you lose it. Revoking takes effect on t
   });
 }
 
-/** What each scope buys, in the operator's terms. */
 /** Scopes a key can carry. `admin` grants nothing beyond `write`, so it is not offered. */
 const KEY_SCOPES: readonly Scope[] = ["read", "write"];
 
+/** What each scope buys, in the operator's terms. */
 const KEY_SCOPE_DESCRIPTIONS: Record<Scope, string> = {
   read: "search desks, list locations and bookings",
   write: "book and cancel desks, within the configured caps",

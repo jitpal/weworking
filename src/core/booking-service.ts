@@ -68,14 +68,12 @@ import type {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The upstream surface this service consumes — build spec §11.1, owned by the WeWork
- * engineer (`src/wework/client.ts`).
+ * The upstream surface this service consumes (`src/wework/client.ts`).
  *
  * It is declared here rather than imported so the core layer has **no dependency on
  * the transport layer**: `WeWorkClient` satisfies it structurally, and tests pass a
- * plain object. When `src/wework/client.ts` lands, its own `WeWorkApi` is the same
- * shape and assignable to this one; if the two ever drift, the mismatch shows up as a
- * type error at the injection site in `src/index.ts` rather than at runtime.
+ * plain object. If the two ever drift, the mismatch shows up as a type error at the
+ * injection site in `src/index.ts` rather than at runtime.
  */
 export interface WeWorkApi {
   listCities(): Promise<string[]>;
@@ -109,14 +107,13 @@ export interface WeWorkApi {
   cancelBooking(booking: Booking): Promise<void>;
 }
 
-/** Outcome of `WeWorkSession.reserveBooking` (build spec §11.2). */
+/** Outcome of `WeWorkSession.reserveBooking`. */
 export type ReserveResult =
   | { ok: true; capsRemaining: CapsRemaining }
   | { ok: false; code: "CAP_EXCEEDED"; message: string; capsRemaining: CapsRemaining };
 
 /**
- * The `WeWorkSession` RPC methods this service calls — build spec §11.2, owned by the
- * session engineer.
+ * The `WeWorkSession` RPC methods this service calls (`src/session/do.ts`).
  *
  * Declared structurally for the same reason as {@link WeWorkApi}: a real
  * `DurableObjectStub<WeWorkSession>` satisfies it (RPC methods return promises), and a
@@ -151,7 +148,7 @@ export interface SessionRpc {
   }): Promise<void>;
 }
 
-/** Injected collaborators — build spec §11.4. */
+/** Injected collaborators. */
 export interface BookingServiceDeps {
   api: WeWorkApi;
   /** The session Durable Object stub (or any object with the same RPC methods). */

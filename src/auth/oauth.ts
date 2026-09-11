@@ -163,9 +163,9 @@ type ProviderApiHandler = NonNullable<OAuthProviderOptions<Env>["apiHandler"]>;
 type ProviderDefaultHandler = OAuthProviderOptions<Env>["defaultHandler"];
 
 /**
- * Accepts either shape §11.3 allows and hands the library what it wants. The cast is
- * the gap between `ExportedHandler<Env>` (whose `fetch` is optional) and the
- * library's `ExportedHandlerWithFetch<Env>`; the function form always has one.
+ * Accepts either handler shape and hands the library what it wants. The cast is the
+ * gap between `ExportedHandler<Env>` (whose `fetch` is optional) and the library's
+ * `ExportedHandlerWithFetch<Env>`; the function form always has one.
  */
 function normaliseApiHandler(handler: ExportedHandler<Env> | ApiFetchHandler): ProviderApiHandler {
   const normalised: ExportedHandler<Env> =

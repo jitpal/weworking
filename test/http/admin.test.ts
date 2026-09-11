@@ -2,9 +2,9 @@
  * The operator pages in `src/http/admin.ts`.
  *
  * The Durable Object is replaced by a plain object (the pages use a handful of RPC
- * methods, declared as `AdminSessionStub`), and `parseManualSession` is mocked at
- * the module boundary the admin pages import it through — so this file exercises the
- * page logic, not the WeWork parser or the DO.
+ * methods, declared as `AdminSessionStub`), and the session parser is a spy injected
+ * through `parseSession`, so this file exercises the page logic, not the WeWork parser
+ * or the Durable Object.
  *
  * Every request carries the signed admin cookie, because that is the only credential
  * `requireAdmin` accepts.
@@ -12,13 +12,6 @@
 
 import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const parseManualSession = vi.fn();
-vi.mock("../../src/auth/_manual-shim", () => ({
-  parseManualSession: (input: string | object, now?: () => number) =>
-    parseManualSession(input, now),
-  decodeJwtPayload: () => ({}),
-}));
 
 import { adminRoutes } from "../../src/auth/admin-session";
 import { oauthRoutes } from "../../src/auth/oauth";
@@ -56,6 +49,17 @@ const KEY: ApiKeySummary = {
   createdAt: "2026-09-10T12:00:00.000Z",
   lastUsedAt: "2026-09-11T08:15:00.000Z",
 };
+
+/** Stands in for `parseManualSession`; the real parser has its own tests. */
+const parseManualSession = vi.fn();
+
+/** The pages under test, with both injectable dependencies replaced. */
+function pages(stub: AdminSessionStub) {
+  return adminPages({
+    sessionStub: () => stub,
+    parseSession: (input, now) => parseManualSession(input, now),
+  });
+}
 
 /** Records what the pages asked the Durable Object to do. */
 function fakeStub(overrides: Partial<AdminSessionStub> = {}) {
@@ -98,14 +102,14 @@ beforeEach(() => {
 
 describe("authentication", () => {
   it("redirects an unauthenticated browser to the login form", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request("/admin", { headers: HTML_HEADERS }, await adminEnv());
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe("/admin/login?next=%2Fadmin");
   });
 
   it("answers an unauthenticated API caller with 401 and the OAuth challenge", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/status",
       { headers: { Accept: "application/json" } },
@@ -116,13 +120,13 @@ describe("authentication", () => {
   });
 
   it("lets the signed-in operator through", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request("/admin/status", { headers: AUTH }, await adminEnv());
     expect(response.status).toBe(200);
   });
 
   it("refuses an agent credential, whatever its scopes", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/status",
       { headers: { Authorization: "Bearer ww_anything", Accept: "application/json" } },
@@ -135,7 +139,7 @@ describe("authentication", () => {
 describe("GET /admin", () => {
   it("renders the session state, the caps and the links", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin",
       { headers: { ...AUTH, ...HTML_HEADERS } },
@@ -164,7 +168,7 @@ describe("GET /admin", () => {
         hasRefreshToken: false,
       })),
     });
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin",
       { headers: { ...AUTH, ...HTML_HEADERS } },
@@ -174,7 +178,7 @@ describe("GET /admin", () => {
   });
 
   it("surfaces a flash message from the query string, escaped", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       `/admin?flash=${encodeURIComponent("connected, expires <2026>")}`,
       { headers: { ...AUTH, ...HTML_HEADERS } },
@@ -187,7 +191,7 @@ describe("GET /admin", () => {
 
   it("reports a configuration problem instead of failing", async () => {
     const env = await adminEnv({ QUOTE_SIGNING_KEY: "too-short" });
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request("/admin", { headers: { ...AUTH, ...HTML_HEADERS } }, env);
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toContain("Configuration problem");
@@ -196,7 +200,7 @@ describe("GET /admin", () => {
 
 describe("GET /admin/connect", () => {
   it("explains the four steps, the bookmarklet and the storage promise", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/connect",
       { headers: { ...AUTH, ...HTML_HEADERS } },
@@ -229,7 +233,7 @@ describe("GET /admin/connect", () => {
   });
 
   it("escapes the bookmarklet into the href rather than emitting raw quotes", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const html = await (
       await app.request(
         "/admin/connect",
@@ -241,7 +245,7 @@ describe("GET /admin/connect", () => {
   });
 
   it("shows the error and hint a failed paste redirected with", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const html = await (
       await app.request(
         "/admin/connect?error=No%20access%20token&hint=Paste%20the%20whole%20entry",
@@ -266,7 +270,7 @@ describe("POST /admin/session", () => {
   it("stores what the parser returned and redirects with an expiry flash", async () => {
     parseManualSession.mockReturnValue(RECORD);
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/session",
       {
@@ -288,7 +292,7 @@ describe("POST /admin/session", () => {
   it("accepts a JSON body and answers with the new session info", async () => {
     parseManualSession.mockReturnValue(RECORD);
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/session",
       {
@@ -310,7 +314,7 @@ describe("POST /admin/session", () => {
       });
     });
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/session",
       {
@@ -332,7 +336,7 @@ describe("POST /admin/session", () => {
     parseManualSession.mockImplementation(() => {
       throw new AppError("VALIDATION", "Unparseable.", { hint: "Try again." });
     });
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/session",
       {
@@ -348,7 +352,7 @@ describe("POST /admin/session", () => {
   });
 
   it("rejects an empty paste before calling the parser", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/session",
       {
@@ -366,7 +370,7 @@ describe("POST /admin/session", () => {
   });
 
   it("refuses an absurdly large paste", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/session",
       {
@@ -384,7 +388,7 @@ describe("POST /admin/session", () => {
 describe("POST /admin/session/clear", () => {
   it("clears the stored session and warns that WeWork still has it", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/session/clear",
       { method: "POST", headers: { ...AUTH, ...HTML_HEADERS } },
@@ -397,7 +401,7 @@ describe("POST /admin/session/clear", () => {
 
   it("answers JSON callers with a result object", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/session/clear",
       { method: "POST", headers: { ...AUTH, "Content-Type": "application/json" } },
@@ -410,7 +414,7 @@ describe("POST /admin/session/clear", () => {
 describe("GET /admin/audit", () => {
   it("renders a table and escapes every cell", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const response = await app.request(
       "/admin/audit?limit=10",
       { headers: { ...AUTH, ...HTML_HEADERS } },
@@ -426,7 +430,7 @@ describe("GET /admin/audit", () => {
   });
 
   it("serves the same data as JSON with ?format=json", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request(
       "/admin/audit?format=json&limit=3",
       { headers: AUTH },
@@ -439,7 +443,7 @@ describe("GET /admin/audit", () => {
 
   it("clamps a silly limit", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     await app.request("/admin/audit?limit=100000", { headers: AUTH }, await adminEnv());
     expect(stub.listAudit).toHaveBeenCalledWith({ limit: 500 });
     await app.request("/admin/audit?limit=nonsense", { headers: AUTH }, await adminEnv());
@@ -447,7 +451,7 @@ describe("GET /admin/audit", () => {
   });
 
   it("says so when the log is empty", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub({ listAudit: vi.fn(async () => []) }) });
+    const app = pages(fakeStub({ listAudit: vi.fn(async () => []) }));
     const html = await (
       await app.request("/admin/audit", { headers: { ...AUTH, ...HTML_HEADERS } }, await adminEnv())
     ).text();
@@ -457,7 +461,7 @@ describe("GET /admin/audit", () => {
 
 describe("GET /admin/status", () => {
   it("returns the session, caps, switches and secret presence", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const response = await app.request("/admin/status", { headers: AUTH }, await adminEnv());
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -483,14 +487,13 @@ describe("GET /admin/status", () => {
   });
 
   it("still answers when the Durable Object call fails", async () => {
-    const app = adminPages({
-      sessionStub: () =>
-        fakeStub({
-          getSessionInfo: vi.fn(async () => {
-            throw new AppError("SESSION_MISSING", "No session.");
-          }),
+    const app = pages(
+      fakeStub({
+        getSessionInfo: vi.fn(async () => {
+          throw new AppError("SESSION_MISSING", "No session.");
         }),
-    });
+      }),
+    );
     const response = await app.request("/admin/status", { headers: AUTH }, await adminEnv());
     expect(response.status).toBe(200);
     const body = (await response.json()) as { session: SessionInfo };
@@ -556,7 +559,7 @@ describe("/admin/keys", () => {
         ],
       ),
     });
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const { response, html } = await loadKeys(app, await adminEnv());
 
     expect(response.status).toBe(200);
@@ -574,7 +577,7 @@ describe("/admin/keys", () => {
   });
 
   it("ticks read by default, offers write, and does not offer admin", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub() });
+    const app = pages(fakeStub());
     const { html } = await loadKeys(app, await adminEnv());
     expect(html).toContain('<input type="checkbox" name="scope" value="read" checked>');
     expect(html).toContain('<input type="checkbox" name="scope" value="write">');
@@ -582,18 +585,17 @@ describe("/admin/keys", () => {
   });
 
   it("says so when there are no keys yet", async () => {
-    const app = adminPages({ sessionStub: () => fakeStub({ listApiKeys: vi.fn(async () => []) }) });
+    const app = pages(fakeStub({ listApiKeys: vi.fn(async () => []) }));
     const { html } = await loadKeys(app, await adminEnv());
     expect(html).toContain("No API keys yet");
   });
 
   it("escapes a name that came back from the Durable Object", async () => {
-    const app = adminPages({
-      sessionStub: () =>
-        fakeStub({
-          listApiKeys: vi.fn(async () => [{ ...KEY, name: "<script>alert(1)</script>" }]),
-        }),
-    });
+    const app = pages(
+      fakeStub({
+        listApiKeys: vi.fn(async () => [{ ...KEY, name: "<script>alert(1)</script>" }]),
+      }),
+    );
     const { html } = await loadKeys(app, await adminEnv());
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>alert(1)</script>");
@@ -601,7 +603,7 @@ describe("/admin/keys", () => {
 
   it("creates a key, shows it once, and stores only its hash", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { csrf, jar } = await loadKeys(app, env);
 
@@ -653,7 +655,7 @@ describe("/admin/keys", () => {
 
   it("audits the creation without the key", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { csrf, jar } = await loadKeys(app, env);
     const response = await post(app, env, "/admin/keys", { csrf, name: "laptop" }, ["read"], jar);
@@ -674,7 +676,7 @@ describe("/admin/keys", () => {
 
   it("rejects a create without a valid CSRF token", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { jar } = await loadKeys(app, env);
 
@@ -696,7 +698,7 @@ describe("/admin/keys", () => {
 
   it("asks again for an empty name, a name that is too long, or no scopes", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
 
     for (const [fields, scopes, expected] of [
@@ -714,7 +716,7 @@ describe("/admin/keys", () => {
 
   it("revokes a key and says so on the way back", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { csrf, jar } = await loadKeys(app, env);
 
@@ -731,7 +733,7 @@ describe("/admin/keys", () => {
 
   it("reports an unknown key instead of claiming success", async () => {
     const stub = fakeStub({ revokeApiKey: vi.fn(async () => false) });
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { csrf, jar } = await loadKeys(app, env);
 
@@ -743,7 +745,7 @@ describe("/admin/keys", () => {
 
   it("rejects a revoke without a valid CSRF token", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
     const { jar } = await loadKeys(app, env);
 
@@ -754,7 +756,7 @@ describe("/admin/keys", () => {
 
   it("is closed to anyone without the admin cookie", async () => {
     const stub = fakeStub();
-    const app = adminPages({ sessionStub: () => stub });
+    const app = pages(stub);
     const env = await adminEnv();
 
     const list = await app.request("/admin/keys", { headers: HTML_HEADERS }, env);
@@ -785,7 +787,7 @@ describe("composition with the other route groups", () => {
     // also guard the login form and loop the redirect. This is the regression test
     // for how src/index.ts mounts them.
     const parent = new Hono<{ Bindings: ReturnType<typeof fakeEnv> }>();
-    parent.route("/", adminPages({ sessionStub: () => fakeStub() }));
+    parent.route("/", pages(fakeStub()));
     parent.route("/", adminRoutes());
     parent.route("/", oauthRoutes());
 
@@ -809,7 +811,7 @@ describe("composition with the other route groups", () => {
 
   it("leaves the OAuth approval page reachable without the admin cookie", async () => {
     const parent = new Hono<{ Bindings: ReturnType<typeof fakeEnv> }>();
-    parent.route("/", adminPages({ sessionStub: () => fakeStub() }));
+    parent.route("/", pages(fakeStub()));
     parent.route("/", oauthRoutes());
     const response = await parent.request(
       "/oauth/authorize",

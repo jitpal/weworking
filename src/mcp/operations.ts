@@ -8,13 +8,15 @@
  *
  * `src/mcp/tools.ts` wraps these for MCP, `src/http/api.ts` for REST. Because both go
  * through here, a REST response and an MCP `structuredContent` are byte-identical, and
- * the scope checks cannot diverge either.
+ * the scope checks cannot diverge either: the write operations call `requireScope`
+ * from `src/auth/guard.ts`, which is the only implementation of that check.
  *
  * Arrays are wrapped in a named key (`{ locations: [...] }`, `{ results: [...] }`,
  * `{ bookings: [...] }`): MCP requires `structuredContent` to be a JSON *object*, and
  * docs/API.md documents the same wrappers for REST.
  */
 
+import { requireScope } from "../auth/guard";
 import type { BookingServiceImpl, SearchArgs, WhoamiResultWithCaps } from "../core/booking-service";
 import { base64UrlDecode } from "../core/quote";
 import { isoUtc } from "../core/time";
@@ -38,7 +40,6 @@ import type {
   ListLocationsInput,
   SearchAvailabilityInput,
 } from "./schemas";
-import { requireScope } from "./scope";
 
 /** What every operation returns: the machine answer and the sentence to read aloud. */
 export interface OperationResult<T> {

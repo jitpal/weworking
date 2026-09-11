@@ -188,7 +188,7 @@ describe("tools/list", () => {
     expect(byName.get("create_booking")?.annotations?.readOnlyHint).toBe(false);
     expect(byName.get("create_booking")?.annotations?.idempotentHint).toBe(true);
 
-    // Inputs are snake_case, per build spec §11.4.
+    // Inputs are snake_case.
     const search = byName.get("search_availability");
     expect(Object.keys(search?.inputSchema?.properties ?? {})).toEqual(
       expect.arrayContaining([

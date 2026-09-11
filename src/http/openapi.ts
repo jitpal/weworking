@@ -7,9 +7,10 @@
  * draft-2020-12, which is exactly the dialect OpenAPI 3.1 embeds — so the schemas drop
  * straight in with no translation layer.
  *
- * Two security schemes are advertised because the worker accepts both credentials
- * (build spec §8): a static `Bearer` token, and OAuth 2.1 authorization code + PKCE via
- * `@cloudflare/workers-oauth-provider`. Reads need the `read` scope, writes need `write`.
+ * Two security schemes are advertised because the worker accepts both credentials: an
+ * API key minted at `/admin/keys` and sent as `Authorization: Bearer ww_...`, and
+ * OAuth 2.1 authorization code + PKCE via `@cloudflare/workers-oauth-provider`. Reads
+ * need the `read` scope, writes need `write`.
  */
 
 import { Hono } from "hono";
@@ -305,7 +306,7 @@ export function openapiDocument(baseUrl: string): Record<string, unknown> {
  * `GET /docs` viewer.
  *
  * Mount at `/api` **before** the authentication middleware — the document is public by
- * design (build spec §9), so a client can discover how to authenticate.
+ * design, so a client can discover how to authenticate.
  *
  * @example app.route("/api", openapiRoutes());
  */

@@ -1,5 +1,5 @@
 /**
- * `GET /healthz` — the public liveness and configuration probe (build spec §8).
+ * `GET /healthz` — the public liveness and configuration probe.
  *
  * Two rules shape this file:
  *

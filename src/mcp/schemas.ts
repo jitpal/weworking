@@ -6,7 +6,7 @@
  * cannot mean one thing over MCP and another over HTTP, and the published OpenAPI can
  * never drift from what the code actually accepts.
  *
- * Naming follows build spec §11.4 exactly:
+ * Naming:
  * - **requests are `snake_case`** (`location_id`, `start_time`, `dry_run`) — for MCP
  *   tool arguments, REST JSON bodies *and* REST query strings;
  * - **responses are `camelCase`**, the domain field names from `src/core/types.ts`,

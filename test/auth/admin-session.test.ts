@@ -2,7 +2,7 @@
  * The admin sign-in form, the signed cookie it mints, and the `requireAdmin` gate.
  *
  * Driven through `app.request()` on the route group itself — never through
- * `src/index.ts`, which another engineer owns.
+ * `src/index.ts`.
  */
 
 import { Hono } from "hono";

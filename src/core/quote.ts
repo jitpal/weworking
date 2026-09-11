@@ -6,9 +6,10 @@
  * captured at search time, signed with `QUOTE_SIGNING_KEY`, and handed to the agent
  * as one opaque string. An agent therefore cannot book a space the user never saw in
  * a search result, cannot move the window, and cannot change the price: any edit
- * breaks the MAC, and the token dies after ten minutes (`QUOTE_TTL_SECONDS` in booking-service).
+ * breaks the MAC, and the token dies after ten minutes (`QUOTE_TTL_SECONDS` in
+ * booking-service; it is a constant, not a configurable var).
  *
- * Wire format (§6 of the build spec):
+ * Wire format:
  *
  * ```text
  * quote = base64url(utf8(json(QuotePayload))) "." base64url(HMAC-SHA-256(key, payloadB64))

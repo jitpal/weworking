@@ -52,7 +52,7 @@ export interface ToolContext {
   actor: Actor;
 }
 
-/** The tool names, in the order `tools/list` reports them. Exact per build spec §9. */
+/** The tool names, in the order `tools/list` reports them. */
 export const TOOL_NAMES = [
   "whoami",
   "list_locations",

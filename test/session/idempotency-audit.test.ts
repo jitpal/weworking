@@ -12,7 +12,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { freshSession, queryCount, rejection, setClock } from "./helpers";
 
-vi.mock("../../src/wework/auth", () => ({
+vi.mock("../../src/wework/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/wework/auth")>()),
   createHeadlessLoginStrategy: () => ({
     name: "headless" as const,
     login: () => Promise.reject(new Error("no login in audit tests")),

@@ -26,7 +26,7 @@ import {
 } from "./fakes";
 
 /**
- * Compile-time guard: the `WeWorkApi` this layer declares locally (build spec §11.1) and
+ * Compile-time guard: the `WeWorkApi` this layer declares locally and
  * the one `src/wework/client.ts` exports must stay mutually assignable, and a real
  * `DurableObjectStub<WeWorkSession>` must satisfy `SessionRpc`.
  *

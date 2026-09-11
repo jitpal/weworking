@@ -24,7 +24,8 @@ import {
 
 const auth = vi.hoisted(() => ({ login: vi.fn(), refresh: vi.fn() }));
 
-vi.mock("../../src/wework/auth", () => ({
+vi.mock("../../src/wework/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/wework/auth")>()),
   createHeadlessLoginStrategy: () => ({ name: "headless" as const, login: auth.login }),
   refreshSession: auth.refresh,
 }));
