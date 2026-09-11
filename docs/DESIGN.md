@@ -80,7 +80,7 @@ package.json tsconfig.json vitest.config.ts biome.jsonc wrangler.jsonc worker-co
 .github/workflows/ci.yml  .github/dependabot.yml  .github/ISSUE_TEMPLATE/
 docs/ DESIGN.md SELF_HOSTING.md CLIENTS.md API.md LOCATION_AND_TIME.md
       WEWORK_API.md THREAT_MODEL.md CAPTURE_GUIDE.md DEPENDENCY_NOTES.md
-plugin/ plugin.json mcp.json skills/book-a-desk/SKILL.md
+skills/book-a-desk/SKILL.md  (plain Agent Skill; no plugin manifest)
 scripts/ record-fixture.mjs (manual, live, redacts)  wrangler.mjs (config picker)
 src/
   index.ts                 # composes everything; default fetch + scheduled, exports the DO class

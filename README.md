@@ -43,7 +43,7 @@ An agent with access to this can spend your money, so the defaults assume the wo
 - **Keys are scoped and revocable.** A `read` key can search but never book. Revoke any key with one click on `/admin/keys`. Only a hash of each key is stored.
 - **Your credentials never reach the model.** The WeWork session lives in a Durable Object in your own Cloudflare account. No tool result, error, or log line contains it.
 - **A kill switch and an audit log.** `WRITE_ENABLED=false` makes the whole deployment read-only in one deploy. Every search, booking, and cancellation is recorded on `/admin/audit`.
-- **The agent is told the rules.** The server's instructions and the bundled skill say: show the cost, get a yes, never retry a booking blindly, and remind the user that a booking can be cancelled free until 11:59pm the day before.
+- **The agent is told the rules.** The server's instructions and the [bundled skill](skills/book-a-desk/SKILL.md) say: show the cost, get a yes, never retry a booking blindly, and remind the user that a booking can be cancelled free until 11:59pm the day before.
 
 ## How it works
 

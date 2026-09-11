@@ -150,9 +150,9 @@ asyncio.run(main())
 
 Use a `read`-scoped token while you are developing, so a confused agent cannot spend credits. There is no OAuth helper here; supply a header.
 
-## Agent plugin
+## The skill
 
-The repo ships an Agent Plugin in [`plugin/`](../plugin) with a `book-a-desk` skill that encodes the confirm-before-booking workflow. Edit `plugin/mcp.json` and replace `https://REPLACE_ME.workers.dev/mcp` with your Worker URL before installing it.
+[`skills/book-a-desk/SKILL.md`](../skills/book-a-desk/SKILL.md) is a plain Agent Skill that encodes the confirm-before-booking workflow: search first, show the cost and local times, get a yes, book with the quote, report the cancellation deadline. Copy the folder into wherever your agent loads skills from (for Claude Code, `.claude/skills/` in a project or `~/.claude/skills/`). The server's own instructions carry the same core rules, so the skill is a refinement, not a requirement.
 
 ## Plain curl
 
