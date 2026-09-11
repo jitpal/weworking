@@ -16,6 +16,7 @@ import {
   safeNextPath,
 } from "../../src/auth/admin-session";
 import { clearFailures, clientIp, UNKNOWN_IP } from "../../src/auth/rate-limit";
+import { sha256Hex } from "../../src/auth/tokens";
 import {
   ADMIN_PASSWORD,
   adminCookie,
@@ -142,6 +143,43 @@ describe("POST /admin/login", () => {
       headers: { Cookie: cookieHeader({ [ADMIN_COOKIE]: jar[ADMIN_COOKIE] ?? "" }) },
     });
     await expect(hasAdminCookie(cookieRequest, fakeEnv())).resolves.toBe(true);
+  });
+
+  it("binds the cookie to the password that minted it", async () => {
+    const response = await submitLogin(ADMIN_PASSWORD);
+    const jar = cookiesFrom(response);
+    const cookieRequest = () =>
+      new Request("https://desk.example.com/admin", {
+        headers: { Cookie: cookieHeader({ [ADMIN_COOKIE]: jar[ADMIN_COOKIE] ?? "" }) },
+      });
+
+    // Rotating ADMIN_PASSWORD ends every live session, without touching the
+    // signing key: a copied cookie is no longer proof of anything.
+    await expect(hasAdminCookie(cookieRequest(), fakeEnv())).resolves.toBe(true);
+    await expect(
+      hasAdminCookie(cookieRequest(), fakeEnv({ ADMIN_PASSWORD: "a-brand-new-passphrase" })),
+    ).resolves.toBe(false);
+    await expect(
+      hasAdminCookie(cookieRequest(), fakeEnv({ ADMIN_PASSWORD: undefined })),
+    ).resolves.toBe(false);
+  });
+
+  it("never puts the password, or a full digest of it, in the cookie", async () => {
+    const response = await submitLogin(ADMIN_PASSWORD);
+    const cookie = cookiesFrom(response)[ADMIN_COOKIE] ?? "";
+    const claims = JSON.parse(
+      new TextDecoder().decode(
+        Uint8Array.from(
+          atob((cookie.split(".")[0] ?? "").replace(/-/g, "+").replace(/_/g, "/")),
+          (c) => c.charCodeAt(0),
+        ),
+      ),
+    ) as { sub: string; pw: string };
+    expect(claims.sub).toBe("admin");
+    expect(cookie).not.toContain(ADMIN_PASSWORD);
+    const digest = await sha256Hex(ADMIN_PASSWORD);
+    expect(claims.pw).toBe(digest.slice(0, 16));
+    expect(claims.pw.length).toBeLessThan(digest.length);
   });
 
   it("rejects a wrong password with 401 and no cookie", async () => {

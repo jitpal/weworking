@@ -218,7 +218,7 @@ If you renamed the class or removed the `new_sqlite_classes` migration, wrangler
 - **API key.** Mint the replacement at `/admin/keys`, paste it into the client, then revoke the old one on the same page. Revocation takes effect on the next request; there is no cache to clear and no redeploy.
 - **`QUOTE_SIGNING_KEY`.** `wrangler secret put QUOTE_SIGNING_KEY` with a new `openssl rand -hex 32`. Outstanding quotes become `QUOTE_INVALID`; clients just search again.
 - **`COOKIE_SIGNING_KEY`.** Same; existing admin cookies stop working and you sign in to `/admin` again.
-- **`ADMIN_PASSWORD`.** Put a new value, then rotate `COOKIE_SIGNING_KEY` too if you believe the old password leaked, so any live admin cookie dies with it.
+- **`ADMIN_PASSWORD`.** Put a new value. Every live admin session ends there and then: the `ww_admin` cookie carries a short digest of the password it was minted under, and is refused once that digest stops matching. So rotating the password is enough on its own, and you do not have to rotate `COOKIE_SIGNING_KEY` as well to kick out a copied cookie.
 - **WeWork session.** Sign out on `members.wework.com` (this invalidates the refresh token), then paste a fresh session at `/admin/connect`. Clearing the stored session from the admin page removes it from the Durable Object but does not revoke it upstream. Do both.
 
 ### Revoking a client

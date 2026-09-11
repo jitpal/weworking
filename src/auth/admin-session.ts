@@ -5,7 +5,10 @@
  * place a WeWork session token is ever pasted. It is therefore gated by the single
  * shared secret `ADMIN_PASSWORD`, and the proof of that sign-in is a stateless
  * HMAC-signed cookie (`ww_admin`, 12 hours, `HttpOnly; Secure; SameSite=Lax`) —
- * no server-side session store, so nothing to expire or clean up.
+ * no server-side session store, so nothing to expire or clean up. The one piece of
+ * state it does honour is the password itself: the cookie carries a short digest of
+ * `ADMIN_PASSWORD` and is refused once that changes, so rotating the password ends
+ * every session.
  *
  * This one sign-in serves both halves of the browser surface: the `/admin/*` pages
  * and the OAuth approval screen. Approving a client with the password also starts
@@ -38,7 +41,7 @@ import {
   recordFailure,
 } from "./rate-limit";
 import { signValue, verifyValue } from "./sign";
-import { constantTimeEqual } from "./tokens";
+import { constantTimeEqual, sha256Hex } from "./tokens";
 
 /** Name of the signed admin session cookie. */
 export const ADMIN_COOKIE = "ww_admin";
@@ -72,17 +75,42 @@ export function cookieFromRequest(request: Request, name: string): string | unde
 }
 
 /**
+ * Hex characters of SHA-256(`ADMIN_PASSWORD`) carried in the cookie.
+ *
+ * Eight bytes is far more than enough to tell one password from another, and the
+ * digest is of a secret the holder of the cookie already proved they knew, so the
+ * prefix discloses nothing a brute-forcer could not test against the login form
+ * itself.
+ */
+const PASSWORD_FINGERPRINT_HEX = 16;
+
+/** Short digest of the configured password, or `null` when there is none. */
+async function passwordFingerprint(env: Env): Promise<string | null> {
+  const password = env.ADMIN_PASSWORD?.trim();
+  if (!password) return null;
+  return (await sha256Hex(password)).slice(0, PASSWORD_FINGERPRINT_HEX);
+}
+
+/**
  * Mints the signed `ww_admin` cookie as a ready-to-send `Set-Cookie` value.
  *
  * Shared by the login form and the OAuth approval screen, so both sign the operator
  * in the same way and one browser sign-in covers both.
  *
- * @returns the header value, or `null` when `COOKIE_SIGNING_KEY` is not configured.
+ * The claims carry a short digest of `ADMIN_PASSWORD` as well as `sub`, so the
+ * cookie is bound to the password that minted it. Changing the password therefore
+ * signs every browser out, which is what an operator who has just rotated it
+ * expects; without it a copied cookie stayed valid for its full 12 hours and only
+ * rotating `COOKIE_SIGNING_KEY` could end it.
+ *
+ * @returns the header value, or `null` when a required secret is not configured.
  */
 export async function adminSessionCookie(env: Env): Promise<string | null> {
   const key = env.COOKIE_SIGNING_KEY?.trim();
   if (!key) return null;
-  const value = await signValue(key, { sub: "admin" }, ADMIN_SESSION_TTL_SECONDS);
+  const fingerprint = await passwordFingerprint(env);
+  if (!fingerprint) return null;
+  const value = await signValue(key, { sub: "admin", pw: fingerprint }, ADMIN_SESSION_TTL_SECONDS);
   return [
     `${ADMIN_COOKIE}=${encodeURIComponent(value)}`,
     "Path=/",
@@ -93,12 +121,18 @@ export async function adminSessionCookie(env: Env): Promise<string | null> {
   ].join("; ");
 }
 
-/** True when the request carries a valid, unexpired `ww_admin` cookie. */
+/**
+ * True when the request carries a valid, unexpired `ww_admin` cookie that was
+ * minted under the password currently configured.
+ */
 export async function hasAdminCookie(request: Request, env: Env): Promise<boolean> {
   const key = env.COOKIE_SIGNING_KEY?.trim();
   if (!key) return false;
+  const fingerprint = await passwordFingerprint(env);
+  if (!fingerprint) return false;
   const claims = await verifyValue(key, cookieFromRequest(request, ADMIN_COOKIE));
-  return claims?.sub === "admin";
+  if (claims?.sub !== "admin" || typeof claims.pw !== "string") return false;
+  return constantTimeEqual(claims.pw, fingerprint);
 }
 
 /* -------------------------------------------------------------------------- */
