@@ -1,7 +1,9 @@
-# weworking — local secrets for `wrangler dev`.
+# weworking — secrets.
 #
-# Copy to `.dev.vars` (git-ignored) and fill in. For a deployed Worker set the
-# same names with `npx wrangler secret put <NAME>` instead — never commit real values.
+# The Deploy to Cloudflare button asks for every uncommented name in this file,
+# so the optional ones are commented out. For `wrangler dev`, copy it to
+# `.dev.vars` (git-ignored) and fill it in. For a deployed Worker set the same
+# names with `npx wrangler secret put <NAME>` instead — never commit real values.
 #
 # Non-secret configuration (WRITE_ENABLED, MAX_BOOKINGS_PER_DAY,
 # MAX_CREDITS_PER_BOOKING, MAX_CASH_PER_BOOKING, ...) lives in `wrangler.jsonc`
@@ -12,9 +14,9 @@
 # Only needed if you want the Worker to log in by itself (LOGIN_STRATEGY=auto|headless).
 # Auth0 frequently blocks datacenter IPs with `requires_verification`, and MFA is not
 # supported, so the reliable path is: leave these empty, log in once in your own browser
-# and paste the token at /admin/connect. See docs/SELF_HOSTING.md.
-WEWORK_USERNAME=""
-WEWORK_PASSWORD=""
+# and paste the token at /admin/connect. See docs/SELF_HOSTING.md. Uncomment to use.
+# WEWORK_USERNAME=""
+# WEWORK_PASSWORD=""
 
 # --- Admin access (REQUIRED) ------------------------------------------------
 # Gates /admin/* (connect, API keys, audit log, status) and the OAuth approve screen.

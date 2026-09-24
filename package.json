@@ -44,5 +44,18 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "wrangler": "^4.131.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_PASSWORD": {
+        "description": "Your sign-in for `/admin` (connect WeWork, mint API keys, read the audit log) and for approving OAuth clients. Use a long random passphrase."
+      },
+      "QUOTE_SIGNING_KEY": {
+        "description": "Signs booking quotes, so a booking can only use a price the agent was shown. 32 random bytes as hex: run `openssl rand -hex 32`."
+      },
+      "COOKIE_SIGNING_KEY": {
+        "description": "Signs the admin session cookie. 32 random bytes as hex: run `openssl rand -hex 32` again, **not** the same value as the quote key."
+      }
+    }
   }
 }

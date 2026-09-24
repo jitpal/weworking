@@ -45,7 +45,8 @@ Bindings (`wrangler.jsonc`):
 - `SESSION`, Durable Object class `WeWorkSession`, created by the `new_sqlite_classes`
   migration `v1`.
 - `OAUTH_KV`, KV namespace for the OAuth provider's clients, grants and tokens. The
-  committed config carries a placeholder id; the self-hoster creates their own.
+  committed config binds it without an id, so the first deploy (or the Deploy to
+  Cloudflare button) creates the self-hoster's own.
 - Cron trigger `"17 5 * * *"`, daily refresh and prune.
 - `OAUTH_PROVIDER` is injected at request time by the provider. It is declared on `Env`
   and has no entry in `wrangler.jsonc`.

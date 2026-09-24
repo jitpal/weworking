@@ -19,29 +19,25 @@ npm install
 npx wrangler login
 ```
 
-## 2. Create the KV namespace
+## 2. Make your copy of the config
 
-The OAuth provider stores clients, grants, and tokens in KV. The repo ships with a placeholder id.
+The OAuth provider stores clients, grants, and tokens in a KV namespace. There is nothing to create by hand: the committed `wrangler.jsonc` binds `OAUTH_KV` without an `id`, so the first `npm run deploy` creates the namespace (wrangler may ask whether to create a new one or reuse one; create a new one) and records its id in the config it deployed with. The Deploy to Cloudflare button does the same.
 
-```sh
-npx wrangler kv namespace create OAUTH_KV
-```
-
-Copy `wrangler.jsonc` to `wrangler.local.jsonc` and put the printed `id` into the copy. The local file is gitignored, and `npm run dev`, `npm run deploy`, and `npm run types` all use it when it exists, so the committed config keeps its placeholder and your fork stays mergeable:
+Copy `wrangler.jsonc` to `wrangler.local.jsonc` before that first deploy. The local file is gitignored, and `npm run dev`, `npm run deploy`, and `npm run types` all use it when it exists, so the id lands in your copy, the committed config stays untouched, and your fork stays mergeable:
 
 ```sh
 cp wrangler.jsonc wrangler.local.jsonc
 ```
 
-In `wrangler.local.jsonc`:
+Put anything else specific to your deployment there too: a custom domain (`routes` plus `PUBLIC_BASE_URL`) or different caps. To reuse a namespace you already have, add its id yourself:
 
 ```jsonc
 "kv_namespaces": [
-  { "binding": "OAUTH_KV", "id": "paste-the-id-here" }
+  { "binding": "OAUTH_KV", "id": "your-namespace-id" }
 ]
 ```
 
-If the placeholder is still in whichever config is used, deploy fails with an unknown-namespace error. You can also edit `wrangler.jsonc` directly if you do not mind pulling future changes over it. The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup; the `new_sqlite_classes` migration creates it on first deploy.
+The Durable Object binding (`SESSION` / `WeWorkSession`) needs no setup either; the `new_sqlite_classes` migration creates it on first deploy.
 
 ## 3. Set secrets
 

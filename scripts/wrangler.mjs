@@ -3,8 +3,9 @@
  * Runs wrangler with `wrangler.local.jsonc` when that file exists, otherwise
  * with the committed `wrangler.jsonc`.
  *
- * The committed config ships with placeholder ids so anyone can self-host from
- * it. Copy it to `wrangler.local.jsonc` (gitignored), fill in your KV namespace
+ * The committed config binds its KV namespace without an id so anyone can
+ * self-host from it (the first deploy creates one). Copy it to
+ * `wrangler.local.jsonc` (gitignored), let the first deploy fill in the KV namespace
  * id and anything else specific to your account, and `npm run deploy` picks it
  * up. Pass `-c <file>` yourself to override either.
  */

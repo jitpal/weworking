@@ -15,8 +15,7 @@ The button clones this repo into your GitHub, creates the storage it needs, asks
 ```sh
 git clone https://github.com/jitpal/weworking.git && cd weworking && npm install
 npx wrangler login
-npx wrangler kv namespace create OAUTH_KV       # put the printed id in wrangler.local.jsonc
-cp wrangler.jsonc wrangler.local.jsonc
+cp wrangler.jsonc wrangler.local.jsonc           # your copy; the first deploy fills in its KV id
 npx wrangler secret put ADMIN_PASSWORD           # your sign-in for the admin pages
 npx wrangler secret put QUOTE_SIGNING_KEY        # openssl rand -hex 32
 npx wrangler secret put COOKIE_SIGNING_KEY       # openssl rand -hex 32, a different one
