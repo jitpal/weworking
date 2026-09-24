@@ -12,7 +12,13 @@ import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_COOKIE } from "../../src/auth/admin-session";
-import { grantableScopes, landingRoutes, normaliseScopes, oauthRoutes } from "../../src/auth/oauth";
+import {
+  callbackSource,
+  grantableScopes,
+  landingRoutes,
+  normaliseScopes,
+  oauthRoutes,
+} from "../../src/auth/oauth";
 import { clearFailures } from "../../src/auth/rate-limit";
 import {
   ADMIN_PASSWORD,
@@ -136,6 +142,18 @@ describe("GET /oauth/authorize", () => {
     const { response } = await loadApprovePage();
     expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
     expect(response.headers.get("X-Frame-Options")).toBe("DENY");
+  });
+
+  it("lets the redirect after Approve reach the client's callback", async () => {
+    // Chrome applies form-action to the redirect that follows the post, so 'self'
+    // alone blocks the hop to the client. Both copies of the policy allow it.
+    const { response, html } = await loadApprovePage();
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      "form-action 'self' https://claude.ai;",
+    );
+    const meta = /http-equiv="Content-Security-Policy" content="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(meta).toContain("form-action &#39;self&#39; https://claude.ai");
+    expect(meta).not.toContain("frame-ancestors");
   });
 
   it("escapes the client name rather than rendering its markup", async () => {
@@ -265,6 +283,13 @@ describe("POST /oauth/authorize", () => {
     expect(html).toContain("Incorrect password");
     expect(html).toContain("Admin password");
     expect(provider.completeAuthorization).not.toHaveBeenCalled();
+  });
+
+  it("keeps the callback allowed on the re-rendered form", async () => {
+    const { response } = await approve({ password: "nope" });
+    expect(response.headers.get("Content-Security-Policy")).toContain(
+      "form-action 'self' https://claude.ai;",
+    );
   });
 
   it("rejects a forged CSRF token", async () => {
@@ -446,5 +471,16 @@ describe("landingRoutes", () => {
     expect(html).not.toContain("docs/");
     expect(html).not.toContain("/api/openapi.json");
     expect(html).not.toContain("/healthz");
+  });
+});
+
+describe("callbackSource", () => {
+  it("allows the callback's origin, or an app's scheme", () => {
+    expect(callbackSource("https://agent.meta.ai/oauth/callback?x=1")).toBe(
+      "https://agent.meta.ai",
+    );
+    expect(callbackSource("http://localhost:33418/callback")).toBe("http://localhost:33418");
+    expect(callbackSource("cursor://anysphere.cursor-mcp/oauth/callback")).toBe("cursor:");
+    expect(callbackSource("not a url")).toBeNull();
   });
 });

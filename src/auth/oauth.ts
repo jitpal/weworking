@@ -42,9 +42,10 @@ import type { Scope } from "../core/types";
 import type { Env } from "../env";
 import {
   banner,
-  CONTENT_SECURITY_POLICY,
+  contentSecurityPolicy,
   escapeHtml,
   htmlResponse,
+  metaContentSecurityPolicy,
   page,
 } from "../http/admin-html";
 import { redact } from "../redact";
@@ -259,8 +260,8 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
       AUTH_REQUEST_TTL_SECONDS,
     );
 
-    return htmlResponse(
-      approvePage({
+    return approvalResponse(
+      {
         clientName: client.clientName ?? authRequest.clientId,
         clientUri: client.clientUri,
         redirectUri: authRequest.redirectUri,
@@ -269,7 +270,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         csrf,
         sealed,
         signedIn: await hasAdminCookie(c.req.raw, c.env),
-      }),
+      },
       200,
       csrfHeaders(cookie),
     );
@@ -331,8 +332,8 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         );
         const extra: Record<string, string> =
           outcome.reason === "rate-limited" ? { "Retry-After": String(outcome.retryAfter) } : {};
-        return htmlResponse(
-          approvePage({
+        return approvalResponse(
+          {
             clientName,
             clientUri: client?.clientUri,
             redirectUri: authRequest.redirectUri,
@@ -342,7 +343,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
             sealed,
             error: outcome.message,
             signedIn: false,
-          }),
+          },
           outcome.status,
           csrfHeaders(cookie, extra),
         );
@@ -357,8 +358,8 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
         { ar: base64UrlEncode(JSON.stringify(authRequest)) },
         AUTH_REQUEST_TTL_SECONDS,
       );
-      return htmlResponse(
-        approvePage({
+      return approvalResponse(
+        {
           clientName,
           clientUri: client?.clientUri,
           redirectUri: authRequest.redirectUri,
@@ -368,7 +369,7 @@ export function oauthRoutes(): Hono<{ Bindings: Env }> {
           sealed,
           error: "Tick at least one scope, or cancel in your client.",
           signedIn,
-        }),
+        },
         400,
         csrfHeaders(cookie),
       );
@@ -447,6 +448,40 @@ export function preTickedScopes(requested: Scope[]): Scope[] {
 export function grantableScopes(requested: Scope[], chosen: Scope[]): Scope[] {
   const allowed = requested.length > 0 ? requested : SCOPES_SUPPORTED;
   return allowed.filter((scope) => chosen.includes(scope));
+}
+
+/**
+ * The CSP source that lets the redirect after Approve through: the callback's
+ * origin for http(s) (`https://claude.ai`, `http://localhost:33418`), its scheme
+ * for an app URI (`cursor:`). `null` for anything else, which leaves
+ * `form-action 'self'` as it is and the redirect blocked.
+ */
+export function callbackSource(redirectUri: string): string | null {
+  try {
+    const url = new URL(redirectUri);
+    if (url.protocol === "https:" || url.protocol === "http:") return url.origin;
+    return /^[a-z][a-z0-9+.-]*:$/i.test(url.protocol) ? url.protocol : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The approval page with `form-action` widened to this client's callback, in both
+ * the header and the `<meta>` tag. The redirect URI has already been checked
+ * against the client's registration by `parseAuthRequest`.
+ */
+function approvalResponse(
+  options: ApprovePageOptions,
+  status: number,
+  headers: Record<string, string>,
+): Response {
+  const source = callbackSource(options.redirectUri);
+  const sources = source ? [source] : [];
+  return htmlResponse(approvePage(options, sources), status, {
+    ...headers,
+    "Content-Security-Policy": contentSecurityPolicy(sources),
+  });
 }
 
 function requireSigningKey(env: Env): string {
@@ -551,7 +586,7 @@ const SCOPE_DESCRIPTIONS: Record<Scope, string> = {
   admin: "nothing beyond write today; the operator pages need the admin password",
 };
 
-function approvePage(options: {
+interface ApprovePageOptions {
   clientName: string;
   clientUri?: string;
   redirectUri: string;
@@ -562,7 +597,9 @@ function approvePage(options: {
   error?: string;
   /** True when the browser already holds the admin session cookie. */
   signedIn: boolean;
-}): string {
+}
+
+function approvePage(options: ApprovePageOptions, formActionSources: string[]): string {
   let redirectHost = options.redirectUri;
   try {
     redirectHost = new URL(options.redirectUri).host || options.redirectUri;
@@ -580,6 +617,7 @@ function approvePage(options: {
     .join("");
 
   return page({
+    formActionSources,
     title: "Authorize client",
     heading: "Authorize this client",
     subtitle: "Approving gives it access to your WeWork account through this deployment.",
@@ -642,7 +680,7 @@ function landingPage(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${escapeHtml(CONTENT_SECURITY_POLICY)}">
+<meta http-equiv="Content-Security-Policy" content="${escapeHtml(metaContentSecurityPolicy())}">
 <meta name="robots" content="noindex, nofollow">
 <title>weworking</title>
 <style>

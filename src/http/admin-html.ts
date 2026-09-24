@@ -18,17 +18,42 @@
  */
 
 /**
- * The policy every page carries.
+ * The policy a page carries.
  *
  * `form-action 'self'` keeps a password post local, and `frame-ancestors 'none'`
  * means no other site can put the approval screen or the connect page in a frame.
  * `SameSite=Lax` already makes framed clickjacking impractical (a Lax cookie is not
  * sent into a third-party frame), so this is defence in depth, sent as a header
  * alongside `X-Frame-Options: DENY` for browsers that honour only the older one.
- * The meta tag ignores `frame-ancestors`; the header is what enforces it.
+ *
+ * `formActionSources` exists for one page. Chrome applies `form-action` to the
+ * redirect that follows a form post as well as to the post itself, and pressing
+ * Approve on the OAuth screen redirects to the client's own callback. That page
+ * adds the callback's origin (see `src/auth/oauth.ts`); every other page is
+ * `'self'` only.
  */
-export const CONTENT_SECURITY_POLICY =
-  "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
+export function contentSecurityPolicy(formActionSources: string[] = []): string {
+  return [
+    "default-src 'none'",
+    "style-src 'unsafe-inline'",
+    `form-action ${["'self'", ...formActionSources].join(" ")}`,
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+/** The policy every page but the OAuth approval screen carries. */
+export const CONTENT_SECURITY_POLICY = contentSecurityPolicy();
+
+/**
+ * The `<meta>` copy of a policy. Browsers ignore `frame-ancestors` there (and log
+ * a warning), so it is left to the header.
+ */
+export function metaContentSecurityPolicy(policy: string = CONTENT_SECURITY_POLICY): string {
+  return policy
+    .split("; ")
+    .filter((directive) => !directive.startsWith("frame-ancestors"))
+    .join("; ");
+}
 
 /** Escapes text for interpolation into HTML text or a quoted attribute. */
 export function escapeHtml(value: unknown): string {
@@ -97,6 +122,11 @@ export interface PageOptions {
   nav?: Array<[string, string]>;
   /** Already-escaped HTML. */
   body: string;
+  /**
+   * Extra `form-action` sources for this page's `<meta>` policy. Send the same
+   * {@link contentSecurityPolicy} as the header, or the header blocks the post anyway.
+   */
+  formActionSources?: string[];
 }
 
 /** Wraps body HTML in the shared document shell (CSP, inline CSS, footer disclaimer). */
@@ -112,7 +142,7 @@ export function page(options: PageOptions): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${escapeHtml(CONTENT_SECURITY_POLICY)}">
+<meta http-equiv="Content-Security-Policy" content="${escapeHtml(metaContentSecurityPolicy(contentSecurityPolicy(options.formActionSources)))}">
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(options.title)} - weworking</title>
 <style>${STYLE}</style>
