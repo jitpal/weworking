@@ -1,6 +1,6 @@
 {
   "name": "weworking",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Unofficial WeWork hot-desk search and booking for AI agents: a Cloudflare Worker exposing a remote MCP server and a REST API.",
   "license": "MIT",

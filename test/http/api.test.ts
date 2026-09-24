@@ -430,7 +430,7 @@ describe("GET /healthz", () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
-      version: "0.1.0",
+      version: "0.1.1",
       secrets: {
         weworkCredentials: false,
         adminPassword: true,

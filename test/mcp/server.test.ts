@@ -154,7 +154,7 @@ describe("initialize", () => {
   it("reports the server identity and the instructions with the disclaimer", async () => {
     const app = buildApp();
     const client = await app.connect();
-    expect(client.getServerVersion()).toMatchObject({ name: "weworking", version: "0.1.0" });
+    expect(client.getServerVersion()).toMatchObject({ name: "weworking", version: "0.1.1" });
     const instructions = client.getInstructions() ?? "";
     expect(instructions).toBe(MCP_INSTRUCTIONS);
     expect(instructions).toContain("not affiliated with");

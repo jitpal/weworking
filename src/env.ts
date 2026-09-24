@@ -139,7 +139,7 @@ export interface Config {
 }
 
 /** Semantic version of the deployed worker, reported by `/healthz`. Keep in step with package.json. */
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 
 /** Minimum key length in bytes for the HMAC secrets. */
 const MIN_KEY_BYTES = 32;

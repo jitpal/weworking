@@ -21,7 +21,7 @@ describe("worker front door", () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(body).toMatchObject({
       ok: true,
-      version: "0.1.0",
+      version: "0.1.1",
       secrets: { adminPassword: true, quoteKey: true, cookieKey: true },
       session: { state: "none" },
       writeEnabled: true,

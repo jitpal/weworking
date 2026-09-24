@@ -149,7 +149,7 @@ See [CLIENTS.md](CLIENTS.md).
 ```json
 {
   "ok": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "secrets": {
     "weworkCredentials": false,
     "adminPassword": true,
